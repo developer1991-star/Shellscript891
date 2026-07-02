@@ -1,0 +1,173 @@
+$InputFile = "wiz_issues.csv"
+$OutputFile = "wiz_gcp_validation_report.csv"
+
+$HighPrivRoles = @(
+"roles/owner","roles/editor","roles/iam.serviceAccountAdmin",
+"roles/iam.serviceAccountKeyAdmin","roles/iam.serviceAccountTokenCreator",
+"roles/resourcemanager.projectIamAdmin","roles/run.admin",
+"roles/cloudbuild.builds.editor","roles/artifactregistry.admin",
+"roles/logging.admin","roles/dns.admin","roles/storage.admin",
+"roles/compute.admin","roles/pubsub.admin","roles/dataflow.admin",
+"roles/secretmanager.admin"
+)
+
+$DataAccessPatterns = @(
+"roles/storage","roles/bigquery","roles/datastore",
+"roles/firestore","roles/cloudsql","roles/spanner",
+"roles/secretmanager"
+)
+
+$Rows = Import-Csv $InputFile
+$Results = @()
+
+foreach ($Row in $Rows) {
+
+$ServiceAccount = $Row.'Resource external ID'
+$Project = $Row.'Subscription external ID'
+$Issue = $Row.Description
+
+if ([string]::IsNullOrWhiteSpace($ServiceAccount) -or [string]::IsNullOrWhiteSpace($Project)) {
+continue
+}
+
+Write-Host "Processing $ServiceAccount in $Project"
+
+$Roles = gcloud projects get-iam-policy $Project `
+--flatten="bindings[].members" `
+--filter="bindings.members:serviceAccount:$ServiceAccount" `
+--format="value(bindings.role)" 2>$null
+
+$RoleList = @($Roles | Sort-Object -Unique)
+$AssignedRoles = ($RoleList -join "; ")
+$RoleCount = $RoleList.Count
+
+$HighPrivFound = $RoleList | Where-Object { $HighPrivRoles -contains $_ }
+$HighPrivText = if ($HighPrivFound) { $HighPrivFound -join "; " } else { "None" }
+
+$DataRoles = $RoleList | Where-Object {
+$role = $_
+$DataAccessPatterns | Where-Object { $role -like "$_*" }
+}
+$DataRolesText = if ($DataRoles) { $DataRoles -join "; " } else { "None" }
+
+$Keys = gcloud iam service-accounts keys list `
+--iam-account=$ServiceAccount `
+--project=$Project `
+--managed-by=user `
+--format="csv[no-heading](name,validAfterTime)" 2>$null
+
+$KeyInfo = if ($Keys) { $Keys -join "; " } else { "No user-managed keys found" }
+$OldKeyFound = "No"
+
+foreach ($Key in $Keys) {
+$Parts = $Key -split ","
+if ($Parts.Count -ge 2) {
+try {
+$Created = [datetime]$Parts[1]
+$AgeDays = ((Get-Date) - $Created).Days
+if ($AgeDays -gt 365) {
+$OldKeyFound = "Yes"
+}
+} catch {}
+}
+}
+
+$Recommendations = gcloud recommender recommendations list `
+--project=$Project `
+--location=global `
+--recommender=google.iam.policy.Recommender `
+--format="value(description)" 2>$null
+
+$MatchedRecommendations = $Recommendations | Where-Object { $_ -match [regex]::Escape($ServiceAccount) }
+$RecommendationText = if ($MatchedRecommendations) { $MatchedRecommendations -join "; " } else { "No IAM recommendation found" }
+
+$GrantedPermissions = "N/A"
+$UsedPermissions = "N/A"
+$ExcessPermissions = "N/A"
+
+try {
+$Insights = gcloud recommender insights list `
+--project=$Project `
+--location=global `
+--insight-type=google.iam.policy.Insight `
+--format="json" 2>$null | ConvertFrom-Json
+
+$MatchedInsights = $Insights | Where-Object {
+($_ | ConvertTo-Json -Depth 20) -match [regex]::Escape($ServiceAccount)
+}
+
+if ($MatchedInsights) {
+$InsightText = ($MatchedInsights | ConvertTo-Json -Depth 20)
+
+$GrantedMatches = [regex]::Matches($InsightText, '"grantedPermissionsCount"\s*:\s*(\d+)')
+$UsedMatches = [regex]::Matches($InsightText, '"exercisedPermissionsCount"\s*:\s*(\d+)')
+
+if ($GrantedMatches.Count -gt 0) {
+$GrantedPermissions = (($GrantedMatches | ForEach-Object { [int]$_.Groups[1].Value }) | Measure-Object -Sum).Sum
+}
+
+if ($UsedMatches.Count -gt 0) {
+$UsedPermissions = (($UsedMatches | ForEach-Object { [int]$_.Groups[1].Value }) | Measure-Object -Sum).Sum
+}
+
+if ($GrantedPermissions -ne "N/A" -and $UsedPermissions -ne "N/A") {
+$ExcessPermissions = [int]$GrantedPermissions - [int]$UsedPermissions
+}
+}
+} catch {}
+
+$RoleKey = ($RoleList | Sort-Object -Unique) -join "|"
+$PotentialConsolidationCandidate = "Compare RoleKey with other rows. Same RoleKey means possible candidate; validate same app, same environment, same purpose before consolidating. RoleKey: $RoleKey"
+
+$IssueLower = ""
+if ($Issue) {
+$IssueLower = $Issue.ToLower()
+}
+
+if ($IssueLower -like "*high*" -and $HighPrivText -ne "None") {
+$Validation = "Validated - high privilege roles assigned"
+$Remediation = "Review assigned IAM roles. Remove unused high-privilege roles or replace with least-privilege roles/custom roles based on IAM Recommender."
+}
+elseif ($IssueLower -like "*data*" -and $DataRolesText -ne "None") {
+$Validation = "Validated - data access roles assigned"
+$Remediation = "Review data access roles. Remove unused access to Storage, BigQuery, Firestore, Datastore, Secret Manager, or other data services if not required."
+}
+elseif ($IssueLower -like "*key*" -and $KeyInfo -ne "No user-managed keys found" -and $IssueLower -like "*90*") {
+$Validation = "Validated - user-managed keys exist; confirm unused status in Wiz or audit logs"
+$Remediation = "Disable and delete unused user-managed keys after confirming no application dependency. Prefer Workload Identity or short-lived credentials."
+}
+elseif ($IssueLower -like "*rotated*" -and $OldKeyFound -eq "Yes") {
+$Validation = "Validated - key older than 365 days found"
+$Remediation = "Rotate the user-managed service account key. Update dependent applications with the new key, then delete the old key."
+}
+elseif ($IssueLower -like "*key*" -and $KeyInfo -ne "No user-managed keys found") {
+$Validation = "Validated - user-managed keys exist"
+$Remediation = "Review whether user-managed keys are required. Remove unnecessary keys and prefer keyless authentication where possible."
+}
+else {
+$Validation = "Needs manual review"
+$Remediation = "Review the Wiz finding and GCP IAM/Service Account details manually. Confirm whether the role, data access, or key risk is still applicable."
+}
+
+$Results += [PSCustomObject]@{
+ServiceAccount = $ServiceAccount
+Project = $Project
+Issue = $Issue
+RoleCount = $RoleCount
+AssignedRoles = $AssignedRoles
+HighPrivilegeRoles = $HighPrivText
+DataAccessRoles = $DataRolesText
+UserManagedKeys = $KeyInfo
+KeysOlderThan365Days = $OldKeyFound
+GrantedPermissions = $GrantedPermissions
+UsedPermissions = $UsedPermissions
+ExcessPermissions = $ExcessPermissions
+GcpRecommendation = $RecommendationText
+PotentialConsolidationCandidate = $PotentialConsolidationCandidate
+ValidationResult = $Validation
+RemediationNotes = $Remediation
+}
+}
+
+$Results | Export-Csv $OutputFile -NoTypeInformation
+Write-Host "Done. Report created: $OutputFile"
