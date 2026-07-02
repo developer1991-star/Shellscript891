@@ -1,0 +1,112 @@
+$InputFile = "wiz_issues.csv"
+$OutputFile = "wiz_gcp_validation_report.csv"
+
+$HighPrivRoles = @(
+"roles/owner","roles/editor","roles/iam.serviceAccountAdmin",
+"roles/iam.serviceAccountKeyAdmin","roles/iam.serviceAccountTokenCreator",
+"roles/resourcemanager.projectIamAdmin","roles/run.admin",
+"roles/cloudbuild.builds.editor","roles/artifactregistry.admin",
+"roles/logging.admin","roles/dns.admin","roles/storage.admin",
+"roles/compute.admin","roles/pubsub.admin","roles/dataflow.admin",
+"roles/secretmanager.admin"
+)
+
+$DataAccessPatterns = @(
+"roles/storage","roles/bigquery","roles/datastore",
+"roles/firestore","roles/cloudsql","roles/spanner",
+"roles/secretmanager"
+)
+
+$Rows = Import-Csv $InputFile
+$Results = @()
+
+foreach ($Row in $Rows) {
+
+$ServiceAccount = $Row.ServiceAccount
+$Project = $Row.Project
+$Issue = $Row.Issue
+
+Write-Host "Processing $ServiceAccount in $Project"
+
+$Roles = gcloud projects get-iam-policy $Project `
+--flatten="bindings[].members" `
+--filter="bindings.members:serviceAccount:$ServiceAccount" `
+--format="value(bindings.role)" 2>$null
+
+$RoleList = ($Roles | Sort-Object -Unique)
+$AssignedRoles = ($RoleList -join "; ")
+$RoleCount = $RoleList.Count
+
+$HighPrivFound = $RoleList | Where-Object { $HighPrivRoles -contains $_ }
+$HighPrivText = if ($HighPrivFound) { $HighPrivFound -join "; " } else { "None" }
+
+$DataRoles = $RoleList | Where-Object {
+$role = $_
+$DataAccessPatterns | Where-Object { $role -like "$_*" }
+}
+$DataRolesText = if ($DataRoles) { $DataRoles -join "; " } else { "None" }
+
+$Keys = gcloud iam service-accounts keys list `
+--iam-account=$ServiceAccount `
+--project=$Project `
+--managed-by=user `
+--format="csv[no-heading](name,validAfterTime)" 2>$null
+
+$KeyInfo = if ($Keys) { $Keys -join "; " } else { "No user-managed keys found" }
+$OldKeyFound = "No"
+
+foreach ($Key in $Keys) {
+$Parts = $Key -split ","
+if ($Parts.Count -ge 2) {
+$Created = [datetime]$Parts[1]
+$AgeDays = ((Get-Date) - $Created).Days
+if ($AgeDays -gt 365) {
+$OldKeyFound = "Yes"
+}
+}
+}
+
+$Recommendations = gcloud recommender recommendations list `
+--project=$Project `
+--location=global `
+--recommender=google.iam.policy.Recommender `
+--format="value(description)" 2>$null
+
+$MatchedRecommendations = $Recommendations | Where-Object { $_ -match [regex]::Escape($ServiceAccount) }
+$RecommendationText = if ($MatchedRecommendations) { $MatchedRecommendations -join "; " } else { "No IAM recommendation found" }
+
+$IssueLower = $Issue.ToLower()
+
+if ($IssueLower -like "*high*" -and $HighPrivText -ne "None") {
+$Validation = "Validated - high privilege roles assigned"
+}
+elseif ($IssueLower -like "*data*" -and $DataRolesText -ne "None") {
+$Validation = "Validated - data access roles assigned"
+}
+elseif ($IssueLower -like "*key*" -and $KeyInfo -ne "No user-managed keys found") {
+$Validation = "Validated - user-managed keys exist"
+}
+elseif ($IssueLower -like "*rotated*" -and $OldKeyFound -eq "Yes") {
+$Validation = "Validated - key older than 365 days found"
+}
+else {
+$Validation = "Needs manual review"
+}
+
+$Results += [PSCustomObject]@{
+ServiceAccount = $ServiceAccount
+Project = $Project
+Issue = $Issue
+RoleCount = $RoleCount
+AssignedRoles = $AssignedRoles
+HighPrivilegeRoles = $HighPrivText
+DataAccessRoles = $DataRolesText
+UserManagedKeys = $KeyInfo
+KeysOlderThan365Days = $OldKeyFound
+GcpRecommendation = $RecommendationText
+ValidationResult = $Validation
+}
+}
+
+$Results | Export-Csv $OutputFile -NoTypeInformation
+Write-Host "Done. Report created: $OutputFile"
