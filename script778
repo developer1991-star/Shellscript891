@@ -1,0 +1,97 @@
+#!/bin/bash
+
+INPUT_FILE="wiz_input.csv"
+OUTPUT_FILE="wiz_gcp_validation_report.csv"
+
+HIGH_PRIV_REGEX="roles/owner|roles/editor|roles/iam.serviceAccountAdmin|roles/iam.serviceAccountKeyAdmin|roles/iam.serviceAccountTokenCreator|roles/resourcemanager.projectIamAdmin|roles/run.admin|roles/cloudbuild.builds.editor|roles/artifactregistry.admin|roles/logging.admin|roles/dns.admin|roles/storage.admin|roles/compute.admin|roles/pubsub.admin|roles/dataflow.admin|roles/secretmanager.admin"
+
+DATA_ACCESS_REGEX="roles/storage|roles/bigquery|roles/datastore|roles/firestore|roles/cloudsql|roles/spanner|roles/secretmanager.secretAccessor|roles/secretmanager.admin"
+
+echo "Service Account,Project,Issue Category,Role Count,Assigned Roles,High Privilege Roles,Data Access Roles,User Managed Keys,Keys Older Than 365 Days,GCP IAM Recommendation,Validation Result" > "$OUTPUT_FILE"
+
+csv_escape() {
+echo "$1" | sed 's/"/""/g'
+}
+
+tail -n +2 "$INPUT_FILE" | while IFS=',' read -r SERVICE_ACCOUNT PROJECT ISSUE_CATEGORY
+do
+SERVICE_ACCOUNT=$(echo "$SERVICE_ACCOUNT" | xargs)
+PROJECT=$(echo "$PROJECT" | xargs)
+ISSUE_CATEGORY=$(echo "$ISSUE_CATEGORY" | xargs)
+
+echo "Processing: $SERVICE_ACCOUNT | $PROJECT | $ISSUE_CATEGORY"
+
+ROLES=$(gcloud projects get-iam-policy "$PROJECT" \
+--flatten="bindings[].members" \
+--filter="bindings.members:serviceAccount:$SERVICE_ACCOUNT" \
+--format="value(bindings.role)" 2>/dev/null | sort)
+
+ROLE_COUNT=$(echo "$ROLES" | grep -c "^roles/")
+ROLE_LIST=$(echo "$ROLES" | paste -sd ";" -)
+
+HIGH_PRIV_ROLES=$(echo "$ROLES" | grep -E "$HIGH_PRIV_REGEX" | paste -sd ";" -)
+[ -z "$HIGH_PRIV_ROLES" ] && HIGH_PRIV_ROLES="None"
+
+DATA_ACCESS_ROLES=$(echo "$ROLES" | grep -E "$DATA_ACCESS_REGEX" | paste -sd ";" -)
+[ -z "$DATA_ACCESS_ROLES" ] && DATA_ACCESS_ROLES="None"
+
+KEYS=$(gcloud iam service-accounts keys list \
+--iam-account="$SERVICE_ACCOUNT" \
+--project="$PROJECT" \
+--managed-by=user \
+--format="value(name,validAfterTime)" 2>/dev/null)
+
+if [ -z "$KEYS" ]; then
+KEY_INFO="No user-managed keys found"
+OLD_KEYS="No"
+else
+KEY_INFO=$(echo "$KEYS" | paste -sd ";" -)
+OLD_KEYS="No"
+
+while read -r KEY_NAME KEY_DATE
+do
+[ -z "$KEY_DATE" ] && continue
+
+KEY_SECONDS=$(date -d "$KEY_DATE" +%s 2>/dev/null)
+if [ -z "$KEY_SECONDS" ]; then
+KEY_SECONDS=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$KEY_DATE" +%s 2>/dev/null)
+fi
+
+NOW_SECONDS=$(date +%s)
+
+if [ -n "$KEY_SECONDS" ]; then
+AGE_DAYS=$(( (NOW_SECONDS - KEY_SECONDS) / 86400 ))
+if [ "$AGE_DAYS" -gt 365 ]; then
+OLD_KEYS="Yes"
+fi
+fi
+done <<< "$KEYS"
+fi
+
+RECOMMENDATIONS=$(gcloud recommender recommendations list \
+--project="$PROJECT" \
+--location="global" \
+--recommender="google.iam.policy.Recommender" \
+--format="value(description)" 2>/dev/null | grep -i "$SERVICE_ACCOUNT" | paste -sd ";" -)
+
+[ -z "$RECOMMENDATIONS" ] && RECOMMENDATIONS="No IAM recommendation found"
+
+ISSUE_LOWER=$(echo "$ISSUE_CATEGORY" | tr '[:upper:]' '[:lower:]')
+
+if [[ "$ISSUE_LOWER" == *"high"* && "$HIGH_PRIV_ROLES" != "None" ]]; then
+VALIDATION="Validated - high privilege roles assigned"
+elif [[ "$ISSUE_LOWER" == *"data"* && "$DATA_ACCESS_ROLES" != "None" ]]; then
+VALIDATION="Validated - data access roles assigned"
+elif [[ "$ISSUE_LOWER" == *"active key"* && "$KEY_INFO" != "No user-managed keys found" ]]; then
+VALIDATION="Validated - user-managed active keys exist; confirm unused status in Wiz or logs"
+elif [[ "$ISSUE_LOWER" == *"rotated"* && "$OLD_KEYS" == "Yes" ]]; then
+VALIDATION="Validated - key older than 365 days found"
+else
+VALIDATION="Needs manual review"
+fi
+
+echo "\"$(csv_escape "$SERVICE_ACCOUNT")\",\"$(csv_escape "$PROJECT")\",\"$(csv_escape "$ISSUE_CATEGORY")\",\"$ROLE_COUNT\",\"$(csv_escape "$ROLE_LIST")\",\"$(csv_escape "$HIGH_PRIV_ROLES")\",\"$(csv_escape "$DATA_ACCESS_ROLES")\",\"$(csv_escape "$KEY_INFO")\",\"$OLD_KEYS\",\"$(csv_escape "$RECOMMENDATIONS")\",\"$(csv_escape "$VALIDATION")\"" >> "$OUTPUT_FILE"
+
+done
+
+echo "Done. Report created: $OUTPUT_FILE"
