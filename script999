@@ -1,0 +1,150 @@
+$InputFile = "wiz_issues.csv"
+$TechnicalReport = "wiz_gcp_validation_report.csv"
+$RemediationReport = "wiz_remediation_tracker.csv"
+
+$HighPrivRoles = @(
+"roles/owner","roles/editor","roles/iam.serviceAccountAdmin",
+"roles/iam.serviceAccountKeyAdmin","roles/iam.serviceAccountTokenCreator",
+"roles/resourcemanager.projectIamAdmin","roles/run.admin",
+"roles/cloudbuild.builds.editor","roles/artifactregistry.admin",
+"roles/logging.admin","roles/dns.admin","roles/storage.admin",
+"roles/compute.admin","roles/pubsub.admin","roles/dataflow.admin",
+"roles/secretmanager.admin"
+)
+
+$DataAccessPatterns = @(
+"roles/storage","roles/bigquery","roles/datastore",
+"roles/firestore","roles/cloudsql","roles/spanner",
+"roles/secretmanager"
+)
+
+$Rows = Import-Csv $InputFile
+$TechnicalResults = @()
+$RemediationResults = @()
+
+foreach ($Row in $Rows) {
+
+    $ServiceAccount = $Row.serviceaccount
+    $Project = $Row.project
+    $Issue = $Row.issue
+
+    if ([string]::IsNullOrWhiteSpace($ServiceAccount) -or [string]::IsNullOrWhiteSpace($Project)) {
+        continue
+    }
+
+    Write-Host "Processing $ServiceAccount in $Project"
+
+    $Roles = gcloud projects get-iam-policy $Project `
+        --flatten="bindings[].members" `
+        --filter="bindings.members:serviceAccount:$ServiceAccount" `
+        --format="value(bindings.role)" 2>$null
+
+    $RoleList = @($Roles | Sort-Object -Unique)
+    $AssignedRoles = ($RoleList -join "; ")
+    $RoleCount = $RoleList.Count
+
+    $HighPrivFound = $RoleList | Where-Object { $HighPrivRoles -contains $_ }
+    $HighPrivText = if ($HighPrivFound) { $HighPrivFound -join "; " } else { "None" }
+
+    $DataRoles = $RoleList | Where-Object {
+        $role = $_
+        $DataAccessPatterns | Where-Object { $role -like "$_*" }
+    }
+    $DataRolesText = if ($DataRoles) { $DataRoles -join "; " } else { "None" }
+
+    $Keys = gcloud iam service-accounts keys list `
+        --iam-account=$ServiceAccount `
+        --project=$Project `
+        --managed-by=user `
+        --format="csv[no-heading](name,validAfterTime)" 2>$null
+
+    $KeyInfo = if ($Keys) { $Keys -join "; " } else { "No user-managed keys found" }
+    $OldKeyFound = "No"
+
+    foreach ($Key in $Keys) {
+        $Parts = $Key -split ","
+        if ($Parts.Count -ge 2) {
+            try {
+                $Created = [datetime]$Parts[1]
+                $AgeDays = ((Get-Date) - $Created).Days
+                if ($AgeDays -gt 365) {
+                    $OldKeyFound = "Yes"
+                }
+            } catch {}
+        }
+    }
+
+    $IssueLower = ""
+    if ($Issue) { $IssueLower = $Issue.ToLower() }
+
+    if ($IssueLower -like "*high*" -and $HighPrivText -ne "None") {
+        $FindingValid = "Yes"
+        $RemediationNeeded = "Yes"
+        $Priority = "High"
+        $Validation = "Validated - high privilege roles assigned"
+        $Action = "Review and remove unused high-privilege roles. Replace broad roles with least-privilege roles/custom roles."
+    }
+    elseif ($IssueLower -like "*data*" -and $DataRolesText -ne "None") {
+        $FindingValid = "Yes"
+        $RemediationNeeded = "Yes"
+        $Priority = "Medium"
+        $Validation = "Validated - data access roles assigned"
+        $Action = "Review data access roles and remove unused access if not required."
+    }
+    elseif ($IssueLower -like "*rotated*" -and $OldKeyFound -eq "Yes") {
+        $FindingValid = "Yes"
+        $RemediationNeeded = "Yes"
+        $Priority = "High"
+        $Validation = "Validated - key older than 365 days found"
+        $Action = "Rotate the user-managed key, update dependent apps, then delete the old key."
+    }
+    elseif ($IssueLower -like "*key*" -and $KeyInfo -ne "No user-managed keys found") {
+        $FindingValid = "Yes"
+        $RemediationNeeded = "Yes"
+        $Priority = "High"
+        $Validation = "Validated - user-managed keys exist; confirm unused status in Wiz or logs"
+        $Action = "Disable/delete unused keys after confirming no dependency. Prefer keyless authentication."
+    }
+    else {
+        $FindingValid = "Needs Review"
+        $RemediationNeeded = "Needs Review"
+        $Priority = "Medium"
+        $Validation = "Needs manual review"
+        $Action = "Review finding manually in Wiz and GCP."
+    }
+
+    $RoleKey = ($RoleList | Sort-Object -Unique) -join "|"
+
+    $TechnicalResults += [PSCustomObject]@{
+        ServiceAccount = $ServiceAccount
+        Project = $Project
+        Issue = $Issue
+        RoleCount = $RoleCount
+        AssignedRoles = $AssignedRoles
+        HighPrivilegeRoles = $HighPrivText
+        DataAccessRoles = $DataRolesText
+        UserManagedKeys = $KeyInfo
+        KeysOlderThan365Days = $OldKeyFound
+        RoleKey = $RoleKey
+        ValidationResult = $Validation
+        RemediationNotes = $Action
+    }
+
+    $RemediationResults += [PSCustomObject]@{
+        ServiceAccount = $ServiceAccount
+        Project = $Project
+        WizIssue = $Issue
+        FindingValid = $FindingValid
+        RemediationNeeded = $RemediationNeeded
+        Priority = $Priority
+        RecommendedAction = $Action
+        Comments = $Validation
+    }
+}
+
+$TechnicalResults | Export-Csv $TechnicalReport -NoTypeInformation
+$RemediationResults | Export-Csv $RemediationReport -NoTypeInformation
+
+Write-Host "Done."
+Write-Host "Technical report: $TechnicalReport"
+Write-Host "Remediation tracker: $RemediationReport"
