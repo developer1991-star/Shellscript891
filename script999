@@ -1,150 +1,168 @@
-$InputFile = "wiz_issues.csv"
-$TechnicalReport = "wiz_gcp_validation_report.csv"
-$RemediationReport = "wiz_remediation_tracker.csv"
+trigger: none
+pr: none
 
-$HighPrivRoles = @(
-"roles/owner","roles/editor","roles/iam.serviceAccountAdmin",
-"roles/iam.serviceAccountKeyAdmin","roles/iam.serviceAccountTokenCreator",
-"roles/resourcemanager.projectIamAdmin","roles/run.admin",
-"roles/cloudbuild.builds.editor","roles/artifactregistry.admin",
-"roles/logging.admin","roles/dns.admin","roles/storage.admin",
-"roles/compute.admin","roles/pubsub.admin","roles/dataflow.admin",
-"roles/secretmanager.admin"
-)
+parameters:
+  - name: imageTag
+    displayName: Lucius image tag to deploy
+    type: string
+    default: ""
 
-$DataAccessPatterns = @(
-"roles/storage","roles/bigquery","roles/datastore",
-"roles/firestore","roles/cloudsql","roles/spanner",
-"roles/secretmanager"
-)
+variables:
+  - group: upsers-pipeline-library
 
-$Rows = Import-Csv $InputFile
-$TechnicalResults = @()
-$RemediationResults = @()
+  - name: GcpProject
+    value: gcp-emp-ep-dev
 
-foreach ($Row in $Rows) {
+  - name: GcpRegion
+    value: us-east4
 
-    $ServiceAccount = $Row.serviceaccount
-    $Project = $Row.project
-    $Issue = $Row.issue
+  - name: GcpDeploymentServiceAccount
+    value: emp-ep-cicd-img-transf@gcp-emp-ep-dev.iam.gserviceaccount.com
 
-    if ([string]::IsNullOrWhiteSpace($ServiceAccount) -or [string]::IsNullOrWhiteSpace($Project)) {
-        continue
-    }
+  - name: SourceImage
+    value: lucius.ups.com/upsers-docker-dev-virtual/ent-upsers-etl-idhextract
 
-    Write-Host "Processing $ServiceAccount in $Project"
+  - name: TargetImage
+    value: us-east4-docker.pkg.dev/gcp-emp-ep-dev/seas-artifact-registry/upsers-cloudrun-etl-idh
 
-    $Roles = gcloud projects get-iam-policy $Project `
-        --flatten="bindings[].members" `
-        --filter="bindings.members:serviceAccount:$ServiceAccount" `
-        --format="value(bindings.role)" 2>$null
+  - name: CloudRunService
+    value: upsers-cloudrun-etl-idh-dev
 
-    $RoleList = @($Roles | Sort-Object -Unique)
-    $AssignedRoles = ($RoleList -join "; ")
-    $RoleCount = $RoleList.Count
+stages:
+  - stage: Deploy_Dev
+    displayName: Deploy IDH to Dev
 
-    $HighPrivFound = $RoleList | Where-Object { $HighPrivRoles -contains $_ }
-    $HighPrivText = if ($HighPrivFound) { $HighPrivFound -join "; " } else { "None" }
+    jobs:
+      - deployment: DeployCloudRunDev
+        displayName: Transfer image and deploy Cloud Run
+        environment: upsers-idh-dev
 
-    $DataRoles = $RoleList | Where-Object {
-        $role = $_
-        $DataAccessPatterns | Where-Object { $role -like "$_*" }
-    }
-    $DataRolesText = if ($DataRoles) { $DataRoles -join "; " } else { "None" }
+        pool:
+          name: EPE_AgentPool
+          demands:
+            - dynamic_agent_9
+            - agent_env -equals prod
 
-    $Keys = gcloud iam service-accounts keys list `
-        --iam-account=$ServiceAccount `
-        --project=$Project `
-        --managed-by=user `
-        --format="csv[no-heading](name,validAfterTime)" 2>$null
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: none
 
-    $KeyInfo = if ($Keys) { $Keys -join "; " } else { "No user-managed keys found" }
-    $OldKeyFound = "No"
+                - bash: |
+                    set -euo pipefail
 
-    foreach ($Key in $Keys) {
-        $Parts = $Key -split ","
-        if ($Parts.Count -ge 2) {
-            try {
-                $Created = [datetime]$Parts[1]
-                $AgeDays = ((Get-Date) - $Created).Days
-                if ($AgeDays -gt 365) {
-                    $OldKeyFound = "Yes"
-                }
-            } catch {}
-        }
-    }
+                    if [ -z "${{ parameters.imageTag }}" ]; then
+                      echo "##vso[task.logissue type=error]The imageTag parameter is required."
+                      exit 1
+                    fi
 
-    $IssueLower = ""
-    if ($Issue) { $IssueLower = $Issue.ToLower() }
+                    echo "Image tag: ${{ parameters.imageTag }}"
+                  displayName: Validate image tag
 
-    if ($IssueLower -like "*high*" -and $HighPrivText -ne "None") {
-        $FindingValid = "Yes"
-        $RemediationNeeded = "Yes"
-        $Priority = "High"
-        $Validation = "Validated - high privilege roles assigned"
-        $Action = "Review and remove unused high-privilege roles. Replace broad roles with least-privilege roles/custom roles."
-    }
-    elseif ($IssueLower -like "*data*" -and $DataRolesText -ne "None") {
-        $FindingValid = "Yes"
-        $RemediationNeeded = "Yes"
-        $Priority = "Medium"
-        $Validation = "Validated - data access roles assigned"
-        $Action = "Review data access roles and remove unused access if not required."
-    }
-    elseif ($IssueLower -like "*rotated*" -and $OldKeyFound -eq "Yes") {
-        $FindingValid = "Yes"
-        $RemediationNeeded = "Yes"
-        $Priority = "High"
-        $Validation = "Validated - key older than 365 days found"
-        $Action = "Rotate the user-managed key, update dependent apps, then delete the old key."
-    }
-    elseif ($IssueLower -like "*key*" -and $KeyInfo -ne "No user-managed keys found") {
-        $FindingValid = "Yes"
-        $RemediationNeeded = "Yes"
-        $Priority = "High"
-        $Validation = "Validated - user-managed keys exist; confirm unused status in Wiz or logs"
-        $Action = "Disable/delete unused keys after confirming no dependency. Prefer keyless authentication."
-    }
-    else {
-        $FindingValid = "Needs Review"
-        $RemediationNeeded = "Needs Review"
-        $Priority = "Medium"
-        $Validation = "Needs manual review"
-        $Action = "Review finding manually in Wiz and GCP."
-    }
+                - task: DownloadSecureFile@1
+                  name: gcpKey
+                  displayName: Download GCP Dev service-account key
+                  inputs:
+                    secureFile: gcp-emp-ep-dev-cd-key.json
 
-    $RoleKey = ($RoleList | Sort-Object -Unique) -join "|"
+                - bash: |
+                    set -euo pipefail
 
-    $TechnicalResults += [PSCustomObject]@{
-        ServiceAccount = $ServiceAccount
-        Project = $Project
-        Issue = $Issue
-        RoleCount = $RoleCount
-        AssignedRoles = $AssignedRoles
-        HighPrivilegeRoles = $HighPrivText
-        DataAccessRoles = $DataRolesText
-        UserManagedKeys = $KeyInfo
-        KeysOlderThan365Days = $OldKeyFound
-        RoleKey = $RoleKey
-        ValidationResult = $Validation
-        RemediationNotes = $Action
-    }
+                    gcloud auth activate-service-account \
+                      "$(GcpDeploymentServiceAccount)" \
+                      --key-file="$(gcpKey.secureFilePath)" \
+                      --project="$(GcpProject)"
 
-    $RemediationResults += [PSCustomObject]@{
-        ServiceAccount = $ServiceAccount
-        Project = $Project
-        WizIssue = $Issue
-        FindingValid = $FindingValid
-        RemediationNeeded = $RemediationNeeded
-        Priority = $Priority
-        RecommendedAction = $Action
-        Comments = $Validation
-    }
-}
+                    gcloud config set project "$(GcpProject)"
 
-$TechnicalResults | Export-Csv $TechnicalReport -NoTypeInformation
-$RemediationResults | Export-Csv $RemediationReport -NoTypeInformation
+                    echo "Authenticated GCP account:"
+                    gcloud auth list \
+                      --filter=status:ACTIVE \
+                      --format="value(account)"
+                  displayName: Authenticate to Google Cloud
 
-Write-Host "Done."
-Write-Host "Technical report: $TechnicalReport"
-Write-Host "Remediation tracker: $RemediationReport"
+                - bash: |
+                    set -euo pipefail
+
+                    gcloud auth configure-docker \
+                      us-east4-docker.pkg.dev \
+                      --quiet
+                  displayName: Configure Google Artifact Registry authentication
+
+                # Replace this step with the same Lucius login template
+                # used by the successful CI image pipeline.
+                - bash: |
+                    set -euo pipefail
+
+                    echo "Lucius authentication must be performed here."
+                    echo "Use the same Enterprise Pipeline registry-login template as CI."
+                    exit 1
+                  displayName: Authenticate to Lucius
+
+                - bash: |
+                    set -euo pipefail
+
+                    SOURCE="$(SourceImage):${{ parameters.imageTag }}"
+                    TARGET="$(TargetImage):${{ parameters.imageTag }}"
+
+                    echo "Pulling source image:"
+                    echo "${SOURCE}"
+
+                    podman pull "${SOURCE}"
+                    podman tag "${SOURCE}" "${TARGET}"
+                    podman push "${TARGET}"
+
+                    echo "##vso[task.setvariable variable=DeployedImage]${TARGET}"
+                  displayName: Transfer image from Lucius to GAR
+
+                - bash: |
+                    set -euo pipefail
+
+                    echo "Deploying image:"
+                    echo "$(DeployedImage)"
+
+                    gcloud run deploy "$(CloudRunService)" \
+                      --project="$(GcpProject)" \
+                      --region="$(GcpRegion)" \
+                      --image="$(DeployedImage)" \
+                      --platform=managed \
+                      --no-traffic \
+                      --tag=candidate \
+                      --quiet
+                  displayName: Deploy candidate Cloud Run revision
+
+                - bash: |
+                    set -euo pipefail
+
+                    gcloud run services describe "$(CloudRunService)" \
+                      --project="$(GcpProject)" \
+                      --region="$(GcpRegion)" \
+                      --format="table(
+                        metadata.name,
+                        status.latestCreatedRevisionName,
+                        status.latestReadyRevisionName,
+                        status.url
+                      )"
+
+                    CREATED_REVISION="$(
+                      gcloud run services describe "$(CloudRunService)" \
+                        --project="$(GcpProject)" \
+                        --region="$(GcpRegion)" \
+                        --format='value(status.latestCreatedRevisionName)'
+                    )"
+
+                    READY_REVISION="$(
+                      gcloud run services describe "$(CloudRunService)" \
+                        --project="$(GcpProject)" \
+                        --region="$(GcpRegion)" \
+                        --format='value(status.latestReadyRevisionName)'
+                    )"
+
+                    if [ "${CREATED_REVISION}" != "${READY_REVISION}" ]; then
+                      echo "##vso[task.logissue type=error]The new Cloud Run revision did not become ready."
+                      exit 1
+                    fi
+
+                    echo "Candidate revision is ready: ${READY_REVISION}"
+                  displayName: Verify candidate revision
