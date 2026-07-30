@@ -1,14 +1,7 @@
-COPY requirements.txt /app/requirements.txt
 
 RUN --mount=type=secret,id=jfrog_token,target=/run/secrets/jfrog-config \
-    bash -c ' \
-      AUTH=$(python -c "import json; print(json.load(open(\"/run/secrets/jfrog-config\"))[\"auths\"][\"lucius.ups.com\"][\"auth\"])"); \
-      CREDS=$(printf "%s" "$AUTH" | base64 --decode); \
-      JFROG_USER=${CREDS%%:*}; \
-      JFROG_TOKEN=${CREDS#*:}; \
-      python -m pip install \
+    python -c 'import base64,json,urllib.parse; c=json.load(open("/run/secrets/jfrog-config")); a=c["auths"]; e=(a.get("lucius.ups.com") or a.get("https://lucius.ups.com"))["auth"]; u,t=base64.b64decode(e).decode().split(":",1); url="https://{}:{}@lucius.ups.com/artifactory/api/pypi/upsers-pypi-prod-virtual/simple".format(urllib.parse.quote(u,safe=""),urllib.parse.quote(t,safe="")); open("/tmp/pip.conf","w").write("[global]\nindex-url = "+url+"\ntrusted-host = lucius.ups.com\n")' && \
+    PIP_CONFIG_FILE=/tmp/pip.conf python -m pip install \
         --no-cache-dir \
-        --index-url "https://${JFROG_USER}:${JFROG_TOKEN}@lucius.ups.com/artifactory/api/pypi/upsers-pypi-prod-virtual/simple" \
-        --trusted-host lucius.ups.com \
-        -r /app/requirements.txt \
-    '
+        -r /app/requirements.txt && \
+    rm -f /tmp/pip.conf
