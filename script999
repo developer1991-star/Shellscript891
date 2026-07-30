@@ -1,25 +1,42 @@
- stages:
-  - stage: Prepare
-    displayName: Generate image tag
+- bash: |
+    set -euo pipefail
 
-    jobs:
-      - job: GenerateImageTag
-        displayName: Generate application image tag
+    TAGS_URL="$(System.CollectionUri)$(System.TeamProject)/_apis/build/builds/$(Build.BuildId)/tags?api-version=7.1"
 
-        steps:
-          - checkout: self
+    echo "Reading enterprise build tags for build $(Build.BuildId)..."
 
-          - bash: |
-              set -euo pipefail
+    RESPONSE="$(curl --silent --show-error --fail \
+      --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+      "${TAGS_URL}")"
 
-              APP_VERSION="$(tr -d '\r\n ' < VERSION.txt)"
-              COMMIT_ID="${BUILD_SOURCEVERSION:0:9}"
-              IMAGE_TAG="${APP_VERSION}-${COMMIT_ID}"
+    IMAGE_TAG="$(echo "${RESPONSE}" \
+      | python3 -c '
+    import json
+    import sys
 
-              echo "App version: ${APP_VERSION}"
-              echo "Commit ID: ${COMMIT_ID}"
-              echo "Image tag: ${IMAGE_TAG}"
+    data = json.load(sys.stdin)
 
-              echo "##vso[task.setvariable variable=ImageTag;isOutput=true]${IMAGE_TAG}"
-            name: SetImageTag
-            displayName: Create image tag
+    tags = data.get("value", data if isinstance(data, list) else [])
+
+    image_tags = [
+        tag.split("=", 1)[1]
+        for tag in tags
+        if isinstance(tag, str) and tag.startswith("image_tag=")
+    ]
+
+    print(image_tags[0] if image_tags else "")
+    ')"
+
+    if [ -z "${IMAGE_TAG}" ]; then
+      echo "##vso[task.logissue type=warning]The enterprise pipeline did not publish an image_tag build tag. Deployment will be skipped."
+      echo "##vso[task.setvariable variable=SkipDeployment]true"
+      exit 0
+    fi
+
+    echo "Enterprise image tag: ${IMAGE_TAG}"
+
+    echo "##vso[task.setvariable variable=ImageTag]${IMAGE_TAG}"
+    echo "##vso[task.setvariable variable=SkipDeployment]false"
+  displayName: Read enterprise image tag
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
