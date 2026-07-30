@@ -9,7 +9,7 @@
       --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
       "${TAGS_URL}")"
 
-    IMAGE_TAG="$(printf '%s' "${RESPONSE}" | python3 -c '
+    printf '%s' "${RESPONSE}" | python3 -c '
     import json
     import sys
 
@@ -22,21 +22,18 @@
     else:
         tags = []
 
-    for tag in tags:
-        if isinstance(tag, str) and tag.startswith("image_tag="):
-            print(tag.split("=", 1)[1])
-            break
-    ')"
+    print("Available build tags:")
 
-    if [ -z "${IMAGE_TAG}" ]; then
-      echo "##vso[task.logissue type=warning]No enterprise image_tag build tag was found. Deployment will be skipped."
-      echo "##vso[task.setvariable variable=SkipDeployment]true"
-      exit 0
-    fi
+    if not tags:
+        print("  No build tags returned.")
+    else:
+        for index, tag in enumerate(tags, start=1):
+            print(f"  {index}. {tag}")
+    '
 
-    echo "Selected enterprise image tag: ${IMAGE_TAG}"
-    echo "##vso[task.setvariable variable=EnterpriseImageTag]${IMAGE_TAG}"
-    echo "##vso[task.setvariable variable=SkipDeployment]false"
-  displayName: Read enterprise image tag
+    echo "##vso[task.logissue type=warning]Build tags were printed for investigation. Deployment will be skipped for this run."
+    echo "##vso[task.setvariable variable=EnterpriseImageTag]"
+    echo "##vso[task.setvariable variable=SkipDeployment]true"
+  displayName: Print enterprise build tags
   env:
     SYSTEM_ACCESSTOKEN: $(System.AccessToken)
