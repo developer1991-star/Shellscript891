@@ -14,11 +14,17 @@
     import sys
 
     response = json.load(sys.stdin)
-    tags = response.get("value", [])
+
+    if isinstance(response, list):
+        tags = response
+    elif isinstance(response, dict):
+        tags = response.get("value", [])
+    else:
+        tags = []
 
     for tag in tags:
         if isinstance(tag, str) and tag.startswith("image_tag="):
-            print(tag[len("image_tag="):])
+            print(tag.split("=", 1)[1])
             break
     ')"
 
@@ -28,8 +34,8 @@
       exit 0
     fi
 
-    echo "Enterprise image tag: ${IMAGE_TAG}"
-    echo "##vso[task.setvariable variable=ImageTag]${IMAGE_TAG}"
+    echo "Selected enterprise image tag: ${IMAGE_TAG}"
+    echo "##vso[task.setvariable variable=EnterpriseImageTag]${IMAGE_TAG}"
     echo "##vso[task.setvariable variable=SkipDeployment]false"
   displayName: Read enterprise image tag
   env:
