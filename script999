@@ -3,38 +3,32 @@
 
     TAGS_URL="$(System.CollectionUri)$(System.TeamProject)/_apis/build/builds/$(Build.BuildId)/tags?api-version=7.1"
 
-    echo "Reading enterprise build tags for build $(Build.BuildId)..."
+    echo "Reading build tags for build $(Build.BuildId)..."
 
     RESPONSE="$(curl --silent --show-error --fail \
       --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
       "${TAGS_URL}")"
 
-    IMAGE_TAG="$(echo "${RESPONSE}" \
-      | python3 -c '
+    IMAGE_TAG="$(printf '%s' "${RESPONSE}" | python3 -c '
     import json
     import sys
 
-    data = json.load(sys.stdin)
+    response = json.load(sys.stdin)
+    tags = response.get("value", [])
 
-    tags = data.get("value", data if isinstance(data, list) else [])
-
-    image_tags = [
-        tag.split("=", 1)[1]
-        for tag in tags
-        if isinstance(tag, str) and tag.startswith("image_tag=")
-    ]
-
-    print(image_tags[0] if image_tags else "")
+    for tag in tags:
+        if isinstance(tag, str) and tag.startswith("image_tag="):
+            print(tag[len("image_tag="):])
+            break
     ')"
 
     if [ -z "${IMAGE_TAG}" ]; then
-      echo "##vso[task.logissue type=warning]The enterprise pipeline did not publish an image_tag build tag. Deployment will be skipped."
+      echo "##vso[task.logissue type=warning]No enterprise image_tag build tag was found. Deployment will be skipped."
       echo "##vso[task.setvariable variable=SkipDeployment]true"
       exit 0
     fi
 
     echo "Enterprise image tag: ${IMAGE_TAG}"
-
     echo "##vso[task.setvariable variable=ImageTag]${IMAGE_TAG}"
     echo "##vso[task.setvariable variable=SkipDeployment]false"
   displayName: Read enterprise image tag
