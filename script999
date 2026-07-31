@@ -9,7 +9,7 @@
       --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
       "${TAGS_URL}")"
 
-    printf '%s' "${RESPONSE}" | python3 -c '
+    ENTERPRISE_IMAGE_TAG="$(printf '%s' "${RESPONSE}" | python3 -c '
     import json
     import sys
 
@@ -22,18 +22,34 @@
     else:
         tags = []
 
-    print("Available build tags:")
+    values = {}
 
-    if not tags:
-        print("  No build tags returned.")
-    else:
-        for index, tag in enumerate(tags, start=1):
-            print(f"  {index}. {tag}")
-    '
+    for tag in tags:
+        if not isinstance(tag, str):
+            continue
 
-    echo "##vso[task.logissue type=warning]Build tags were printed for investigation. Deployment will be skipped for this run."
-    echo "##vso[task.setvariable variable=EnterpriseImageTag]"
-    echo "##vso[task.setvariable variable=SkipDeployment]true"
-  displayName: Print enterprise build tags
+        key, separator, value = tag.partition("=")
+
+        if separator:
+            values[key.strip().lower()] = value.strip()
+
+    version = values.get("version", "")
+    short_commit_id = values.get("short_commit_id", "")
+
+    if version and short_commit_id:
+        print(f"{version}-{short_commit_id}")
+    ')"
+
+    if [ -z "${ENTERPRISE_IMAGE_TAG}" ]; then
+      echo "##vso[task.logissue type=warning]The version or short_commit_id build tag was not found. Deployment will be skipped."
+      echo "##vso[task.setvariable variable=EnterpriseImageTag]"
+      echo "##vso[task.setvariable variable=SkipDeployment]true"
+      exit 0
+    fi
+
+    echo "Enterprise image tag: ${ENTERPRISE_IMAGE_TAG}"
+    echo "##vso[task.setvariable variable=EnterpriseImageTag]${ENTERPRISE_IMAGE_TAG}"
+    echo "##vso[task.setvariable variable=SkipDeployment]false"
+  displayName: Resolve enterprise image tag
   env:
     SYSTEM_ACCESSTOKEN: $(System.AccessToken)
