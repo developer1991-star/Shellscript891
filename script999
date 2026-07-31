@@ -1,55 +1,412 @@
-- bash: |
-    set -euo pipefail
+- stage: Deploy_UAT
+  displayName: Deploy IDH to UAT
+  dependsOn: Deploy_Dev
+  condition: succeeded()
 
-    TAGS_URL="$(System.CollectionUri)$(System.TeamProject)/_apis/build/builds/$(Build.BuildId)/tags?api-version=7.1"
+  variables:
+    # ----------------------------------------------------------
+    # Source image: existing image already promoted to Dev GAR
+    # Do not include the image tag here.
+    # ----------------------------------------------------------
+    DevRegistryHost: us-east4-docker.pkg.dev
+    SourceImage: us-east4-docker.pkg.dev/gcp-emp-ep-dev/seas-artifact-registry/upsers-cloudrun-etl-idh
 
-    echo "Reading build tags for build $(Build.BuildId)..."
+    # ----------------------------------------------------------
+    # UAT Google Cloud configuration
+    # ----------------------------------------------------------
+    GcpProject: gcp-emp-ep-uat
+    GcpRegion: us-central1
 
-    RESPONSE="$(curl --silent --show-error --fail \
-      --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
-      "${TAGS_URL}")"
+    # Replace this if the UAT deployment account uses a
+    # different naming convention.
+    GcpDeploymentServiceAccount: emp-ep-cicd-img-transf@gcp-emp-ep-uat.iam.gserviceaccount.com
 
-    ENTERPRISE_IMAGE_TAG="$(printf '%s' "${RESPONSE}" | python3 -c '
-    import json
-    import sys
+    # Azure DevOps secure-file name containing the UAT
+    # deployment service-account key.
+    GcpSecureFile: gcp-emp-ep-uat-cd-key.json
 
-    response = json.load(sys.stdin)
+    # ----------------------------------------------------------
+    # UAT Artifact Registry
+    # Do not include the image tag here.
+    # ----------------------------------------------------------
+    UatRegistryHost: us-central1-docker.pkg.dev
+    TargetImage: us-central1-docker.pkg.dev/gcp-emp-ep-uat/seas-artifact-registry/upsers-cloudrun-etl-idh
 
-    if isinstance(response, list):
-        tags = response
-    elif isinstance(response, dict):
-        tags = response.get("value", [])
-    else:
-        tags = []
+    # ----------------------------------------------------------
+    # UAT Cloud Run configuration
+    # ----------------------------------------------------------
+    CloudRunService: upsers-cloudrun-etl-idh-uat
+    RuntimeServiceAccount: emp-ep-cloudrun-etl@gcp-emp-ep-uat.iam.gserviceaccount.com
 
-    values = {}
+    EnvironmentName: uat
 
-    for tag in tags:
-        if not isinstance(tag, str):
-            continue
+    CloudRunPort: '8080'
+    CloudRunCpu: '4'
+    CloudRunMemory: 16Gi
+    CloudRunMinInstances: '1'
+    CloudRunMaxInstances: '4'
+    CloudRunTimeout: 3600s
+    CloudRunIngress: internal-and-cloud-load-balancing
 
-        key, separator, value = tag.partition("=")
+  jobs:
+    - deployment: DeployCloudRunUAT
+      displayName: Promote image and deploy IDH to UAT
 
-        if separator:
-            values[key.strip().lower()] = value.strip()
+      # Configure approvals/checks against this Azure environment
+      # if UAT should require manual approval.
+      environment: upsers-idh-uat
 
-    version = values.get("version", "")
-    short_commit_id = values.get("short_commit_id", "")
+      pool:
+        name: EPE_AgentPool
+        demands:
+          - dynamic_agent_9
+          - agent_env -equals prod
 
-    if version and short_commit_id:
-        print(f"{version}-{short_commit_id}")
-    ')"
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - checkout: none
 
-    if [ -z "${ENTERPRISE_IMAGE_TAG}" ]; then
-      echo "##vso[task.logissue type=warning]The version or short_commit_id build tag was not found. Deployment will be skipped."
-      echo "##vso[task.setvariable variable=EnterpriseImageTag]"
-      echo "##vso[task.setvariable variable=SkipDeployment]true"
-      exit 0
-    fi
+              # ==================================================
+              # 1. Resolve the enterprise image tag
+              #
+              # The Dev stage sets variables within its own job.
+              # Because regular task variables do not automatically
+              # carry into another stage, resolve the tag again from
+              # the same Azure build tags.
+              # ==================================================
 
-    echo "Enterprise image tag: ${ENTERPRISE_IMAGE_TAG}"
-    echo "##vso[task.setvariable variable=EnterpriseImageTag]${ENTERPRISE_IMAGE_TAG}"
-    echo "##vso[task.setvariable variable=SkipDeployment]false"
-  displayName: Resolve enterprise image tag
-  env:
-    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+              - bash: |
+                  set -euo pipefail
+
+                  TAGS_URL="$(System.CollectionUri)$(System.TeamProject)/_apis/build/builds/$(Build.BuildId)/tags?api-version=7.1"
+
+                  echo "Reading tags for Azure build $(Build.BuildId)..."
+
+                  RESPONSE="$(
+                    curl \
+                      --silent \
+                      --show-error \
+                      --fail \
+                      --header "Authorization: Bearer ${SYSTEM_ACCESSTOKEN}" \
+                      "${TAGS_URL}"
+                  )"
+
+                  ENTERPRISE_IMAGE_TAG="$(
+                    printf '%s' "${RESPONSE}" |
+                    python3 -c '
+                  import json
+                  import sys
+
+                  response = json.load(sys.stdin)
+
+                  if isinstance(response, list):
+                      tags = response
+                  elif isinstance(response, dict):
+                      tags = response.get("value", [])
+                  else:
+                      tags = []
+
+                  tag_values = {}
+
+                  for tag in tags:
+                      if not isinstance(tag, str):
+                          continue
+
+                      key, separator, value = tag.partition("=")
+
+                      if separator:
+                          tag_values[key.strip().lower()] = value.strip()
+
+                  version = tag_values.get("version", "")
+                  short_commit_id = tag_values.get("short_commit_id", "")
+
+                  if version and short_commit_id:
+                      print(f"{version}-{short_commit_id}")
+                  '
+                  )"
+
+                  if [ -z "${ENTERPRISE_IMAGE_TAG}" ]; then
+                    echo "##vso[task.logissue type=error]Unable to resolve the enterprise image tag. Build tags version and/or short_commit_id are missing."
+                    exit 1
+                  fi
+
+                  echo "Resolved enterprise image tag: ${ENTERPRISE_IMAGE_TAG}"
+
+                  echo "##vso[task.setvariable variable=EnterpriseImageTag]${ENTERPRISE_IMAGE_TAG}"
+                displayName: Resolve enterprise image tag for UAT
+                env:
+                  SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+              # ==================================================
+              # 2. Validate source and target image paths
+              # ==================================================
+
+              - bash: |
+                  set -euo pipefail
+
+                  IMAGE_TAG="$(EnterpriseImageTag)"
+                  SOURCE="$(SourceImage):${IMAGE_TAG}"
+                  TARGET="$(TargetImage):${IMAGE_TAG}"
+
+                  if [ -z "${IMAGE_TAG}" ]; then
+                    echo "##vso[task.logissue type=error]EnterpriseImageTag is empty."
+                    exit 1
+                  fi
+
+                  if [ -z "$(SourceImage)" ]; then
+                    echo "##vso[task.logissue type=error]SourceImage is empty."
+                    exit 1
+                  fi
+
+                  if [ -z "$(TargetImage)" ]; then
+                    echo "##vso[task.logissue type=error]TargetImage is empty."
+                    exit 1
+                  fi
+
+                  echo "Dev source image: ${SOURCE}"
+                  echo "UAT target image: ${TARGET}"
+                displayName: Validate UAT image configuration
+
+              # ==================================================
+              # 3. Download the UAT GCP deployment key
+              # ==================================================
+
+              - task: DownloadSecureFile@1
+                name: gcpUatKey
+                displayName: Download UAT GCP authentication file
+                inputs:
+                  secureFile: $(GcpSecureFile)
+
+              # ==================================================
+              # 4. Authenticate to Google Cloud
+              # ==================================================
+
+              - bash: |
+                  set -euo pipefail
+
+                  echo "Authenticating deployment service account..."
+
+                  gcloud auth activate-service-account \
+                    "$(GcpDeploymentServiceAccount)" \
+                    --key-file="$(gcpUatKey.secureFilePath)" \
+                    --project="$(GcpProject)"
+
+                  gcloud config set project "$(GcpProject)"
+
+                  ACTIVE_ACCOUNT="$(
+                    gcloud auth list \
+                      --filter=status:ACTIVE \
+                      --format="value(account)"
+                  )"
+
+                  if [ -z "${ACTIVE_ACCOUNT}" ]; then
+                    echo "##vso[task.logissue type=error]No active GCP account was found after authentication."
+                    exit 1
+                  fi
+
+                  echo "Authenticated GCP account: ${ACTIVE_ACCOUNT}"
+                  echo "Configured project: $(GcpProject)"
+                displayName: Authenticate to UAT Google Cloud
+
+              # ==================================================
+              # 5. Authenticate Podman to Dev and UAT GAR
+              #
+              # The UAT deployment identity must have:
+              # - Artifact Registry Reader in Dev
+              # - Artifact Registry Writer in UAT
+              # ==================================================
+
+              - bash: |
+                  set -euo pipefail
+
+                  ACCESS_TOKEN="$(gcloud auth print-access-token)"
+
+                  if [ -z "${ACCESS_TOKEN}" ]; then
+                    echo "##vso[task.logissue type=error]Unable to generate a GCP access token."
+                    exit 1
+                  fi
+
+                  echo "Authenticating to Dev GAR..."
+
+                  printf '%s' "${ACCESS_TOKEN}" |
+                    podman login \
+                      --username oauth2accesstoken \
+                      --password-stdin \
+                      "$(DevRegistryHost)"
+
+                  echo "Authenticating to UAT GAR..."
+
+                  printf '%s' "${ACCESS_TOKEN}" |
+                    podman login \
+                      --username oauth2accesstoken \
+                      --password-stdin \
+                      "$(UatRegistryHost)"
+
+                  echo "GAR authentication completed."
+                displayName: Authenticate to Dev and UAT GAR
+
+              # ==================================================
+              # 6. Promote the exact Dev image to UAT GAR
+              # ==================================================
+
+              - bash: |
+                  set -euo pipefail
+
+                  IMAGE_TAG="$(EnterpriseImageTag)"
+                  SOURCE="$(SourceImage):${IMAGE_TAG}"
+                  TARGET="$(TargetImage):${IMAGE_TAG}"
+
+                  echo "Promoting IDH image from Dev to UAT"
+                  echo "Source: ${SOURCE}"
+                  echo "Target: ${TARGET}"
+
+                  podman pull "${SOURCE}"
+
+                  SOURCE_IMAGE_ID="$(
+                    podman image inspect \
+                      --format '{{.Id}}' \
+                      "${SOURCE}"
+                  )"
+
+                  if [ -z "${SOURCE_IMAGE_ID}" ]; then
+                    echo "##vso[task.logissue type=error]Unable to inspect the downloaded Dev image."
+                    exit 1
+                  fi
+
+                  echo "Source image ID: ${SOURCE_IMAGE_ID}"
+
+                  podman tag \
+                    "${SOURCE}" \
+                    "${TARGET}"
+
+                  podman push \
+                    "${TARGET}"
+
+                  echo "Image successfully pushed to UAT GAR."
+
+                  echo "##vso[task.setvariable variable=DeployedImage]${TARGET}"
+                  echo "##vso[task.setvariable variable=PromotedSourceImageId]${SOURCE_IMAGE_ID}"
+                displayName: Promote image from Dev GAR to UAT GAR
+
+              # ==================================================
+              # 7. Verify the image exists in UAT GAR
+              # ==================================================
+
+              - bash: |
+                  set -euo pipefail
+
+                  IMAGE="$(DeployedImage)"
+
+                  if [ -z "${IMAGE}" ]; then
+                    echo "##vso[task.logissue type=error]DeployedImage was not set by the image promotion step."
+                    exit 1
+                  fi
+
+                  echo "Verifying UAT image: ${IMAGE}"
+
+                  gcloud artifacts docker images describe \
+                    "${IMAGE}" \
+                    --project="$(GcpProject)" \
+                    --format="yaml(
+                      package,
+                      version,
+                      image_summary.digest,
+                      image_summary.fully_qualified_digest
+                    )"
+                displayName: Verify promoted image in UAT GAR
+
+              # ==================================================
+              # 8. Deploy a candidate Cloud Run revision
+              #
+              # --no-traffic ensures the new revision does not
+              # immediately receive normal production-style traffic.
+              # ==================================================
+
+              - bash: |
+                  set -euo pipefail
+
+                  IMAGE="$(DeployedImage)"
+
+                  echo "Deploying IDH UAT candidate revision..."
+                  echo "Service: $(CloudRunService)"
+                  echo "Image: ${IMAGE}"
+                  echo "Project: $(GcpProject)"
+                  echo "Region: $(GcpRegion)"
+
+                  gcloud run deploy "$(CloudRunService)" \
+                    --project="$(GcpProject)" \
+                    --region="$(GcpRegion)" \
+                    --image="${IMAGE}" \
+                    --service-account="$(RuntimeServiceAccount)" \
+                    --platform=managed \
+                    --port="$(CloudRunPort)" \
+                    --cpu="$(CloudRunCpu)" \
+                    --memory="$(CloudRunMemory)" \
+                    --min-instances="$(CloudRunMinInstances)" \
+                    --max-instances="$(CloudRunMaxInstances)" \
+                    --timeout="$(CloudRunTimeout)" \
+                    --ingress="$(CloudRunIngress)" \
+                    --update-env-vars="projectID=$(GcpProject),ENVIRONMENT=$(EnvironmentName)" \
+                    --no-allow-unauthenticated \
+                    --no-traffic \
+                    --tag=candidate \
+                    --quiet
+                displayName: Deploy IDH candidate revision to UAT
+
+              # ==================================================
+              # 9. Verify the Cloud Run revision became ready
+              # ==================================================
+
+              - bash: |
+                  set -euo pipefail
+
+                  echo "Reading UAT Cloud Run service status..."
+
+                  gcloud run services describe "$(CloudRunService)" \
+                    --project="$(GcpProject)" \
+                    --region="$(GcpRegion)" \
+                    --format="table(
+                      metadata.name,
+                      status.latestCreatedRevisionName,
+                      status.latestReadyRevisionName,
+                      status.url
+                    )"
+
+                  CREATED_REVISION="$(
+                    gcloud run services describe "$(CloudRunService)" \
+                      --project="$(GcpProject)" \
+                      --region="$(GcpRegion)" \
+                      --format='value(status.latestCreatedRevisionName)'
+                  )"
+
+                  READY_REVISION="$(
+                    gcloud run services describe "$(CloudRunService)" \
+                      --project="$(GcpProject)" \
+                      --region="$(GcpRegion)" \
+                      --format='value(status.latestReadyRevisionName)'
+                  )"
+
+                  if [ -z "${CREATED_REVISION}" ]; then
+                    echo "##vso[task.logissue type=error]Cloud Run did not return the latest created revision."
+                    exit 1
+                  fi
+
+                  if [ -z "${READY_REVISION}" ]; then
+                    echo "##vso[task.logissue type=error]Cloud Run did not return the latest ready revision."
+                    exit 1
+                  fi
+
+                  echo "Created revision: ${CREATED_REVISION}"
+                  echo "Ready revision:   ${READY_REVISION}"
+
+                  if [ "${CREATED_REVISION}" != "${READY_REVISION}" ]; then
+                    echo "##vso[task.logissue type=error]The new UAT Cloud Run revision did not become ready."
+                    exit 1
+                  fi
+
+                  echo "UAT candidate revision is ready: ${READY_REVISION}"
+
+                  echo "##vso[task.setvariable variable=UatReadyRevision]${READY_REVISION}"
+                displayName: Verify UAT candidate revision
