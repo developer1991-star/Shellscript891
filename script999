@@ -1,182 +1,175 @@
-- stage: Deploy_UAT
-  displayName: Deploy IDH to UAT
-  dependsOn: Deploy_Dev
-  condition: succeeded('Deploy_Dev')
+<?xml version="1.0" encoding="UTF-8"?>
 
-  variables:
-    # UAT Google Cloud configuration
-    GcpProject: gcp-emp-ep-uat
-    GcpRegion: us-central1
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
-    # Service account used by the pipeline to authenticate to UAT
-    GcpDeploymentServiceAccount: >-
-      emp-ep-cicd-img-transf@gcp-emp-ep-uat.iam.gserviceaccount.com
+    <modelVersion>4.0.0</modelVersion>
 
-    # Source image in Lucius/JFrog.
-    # Do not include the image tag here.
-    SourceImage: >-
-      lucius.ups.com/upsers-docker-dev-virtual/ent-upsers-etl-idhextract
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.16</version>
+        <relativePath/>
+    </parent>
 
-    # UAT Google Artifact Registry.
-    # Do not include the image tag here.
-    UatRegistryHost: us-central1-docker.pkg.dev
-    TargetImage: >-
-      us-central1-docker.pkg.dev/gcp-emp-ep-uat/seas-artifact-registry/upsers-cloudrun-etl-idh
+    <groupId>com.ups.seas</groupId>
+    <artifactId>seas-api</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
 
-    # Existing UAT Cloud Run service
-    CloudRunService: upsers-cloudrun-etl-idh-uat
+    <name>seas-api</name>
+    <description>SEAS API</description>
 
-  jobs:
-    - deployment: DeployCloudRunUAT
-      displayName: Transfer image and deploy IDH to UAT
-      environment: upsers-idh-uat
+    <properties>
+        <java.version>21</java.version>
+        <grpc.version>1.75.0</grpc.version>
+        <firebase-admin.version>9.7.0</firebase-admin.version>
+        <google-auth.version>1.37.1</google-auth.version>
+        <java-jwt.version>4.5.0</java-jwt.version>
+        <springdoc.version>2.8.17</springdoc.version>
+        <jacoco.version>0.8.13</jacoco.version>
+    </properties>
 
-      pool:
-        name: EPE_AgentPool
-        demands:
-          - dynamic_agent_9
-          - agent_env -equals prod
+    <dependencies>
 
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - checkout: none
+        <!-- Web/API -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
 
-              # Replace this secure-file value with the exact name
-              # configured in Azure DevOps Library > Secure files.
-              - task: DownloadSecureFile@1
-                name: gcpUatKey
-                displayName: Download UAT GCP authentication file
-                inputs:
-                  secureFile: gcp-emp-ep-uat-cicd-key.json
+        <!-- Bean validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
 
-              # Use the same Lucius secure file used by the Dev deployment.
-              - task: DownloadSecureFile@1
-                name: luciusConfigUat
-                displayName: Download Lucius authentication file
-                inputs:
-                  secureFile: lucius-auth.json
+        <!--
+          Springfox 3.x is not appropriate for Spring Boot 3.
+          This replaces:
+            springfox-boot-starter
+            springfox-swagger2
+            springfox-swagger-ui
+        -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
 
-              - bash: |
-                  set -euo pipefail
+        <!-- gRPC -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
 
-                  echo "Authenticating deployment service account:"
-                  echo "$(GcpDeploymentServiceAccount)"
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
 
-                  gcloud auth activate-service-account \
-                    "$(GcpDeploymentServiceAccount)" \
-                    --key-file="$(gcpUatKey.secureFilePath)"
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
 
-                  gcloud config set project "$(GcpProject)"
-                displayName: Authenticate to UAT Google Cloud
+        <!-- Firebase -->
+        <dependency>
+            <groupId>com.google.firebase</groupId>
+            <artifactId>firebase-admin</artifactId>
+            <version>${firebase-admin.version}</version>
+        </dependency>
 
-              - bash: |
-                  set -euo pipefail
+        <!-- Google authentication -->
+        <dependency>
+            <groupId>com.google.auth</groupId>
+            <artifactId>google-auth-library-oauth2-http</artifactId>
+            <version>${google-auth.version}</version>
+        </dependency>
 
-                  gcloud auth configure-docker \
-                    "$(UatRegistryHost)" \
-                    --quiet
-                displayName: Configure UAT Artifact Registry authentication
+        <!-- JWT -->
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+            <version>${java-jwt.version}</version>
+        </dependency>
 
-              - bash: |
-                  set -euo pipefail
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
 
-                  IMAGE_TAG="$(EnterpriseImageTag)"
+        <!-- JAXB, only keep if application code directly requires javax.xml.bind -->
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+        </dependency>
 
-                  if [ -z "${IMAGE_TAG}" ]; then
-                    echo "##vso[task.logissue type=warning]No enterprise image tag was available. UAT deployment will be skipped."
-                    echo "##vso[task.setvariable variable=SkipUatDeployment]true"
-                    exit 0
-                  fi
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
 
-                  SOURCE="$(SourceImage):${IMAGE_TAG}"
-                  TARGET="$(TargetImage):${IMAGE_TAG}"
+    </dependencies>
 
-                  echo "UAT image tag: ${IMAGE_TAG}"
-                  echo "Lucius source: ${SOURCE}"
-                  echo "UAT GAR target: ${TARGET}"
+    <build>
+        <plugins>
 
-                  LUCIUS_AUTH_FILE="$(Agent.TempDirectory)/lucius-auth-uat.json"
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
 
-                  cp "$(luciusConfigUat.secureFilePath)" \
-                    "${LUCIUS_AUTH_FILE}"
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <parameters>true</parameters>
+                    <release>${java.version}</release>
+                </configuration>
+            </plugin>
 
-                  chmod 600 "${LUCIUS_AUTH_FILE}"
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
 
-                  echo "Validating Lucius credentials..."
+                <executions>
+                    <execution>
+                        <id>jacoco-initialize</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
 
-                  podman login \
-                    --authfile "${LUCIUS_AUTH_FILE}" \
-                    --get-login \
-                    lucius.ups.com
+                    <execution>
+                        <id>jacoco-site</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
 
-                  echo "Pulling image from Lucius..."
+                        <configuration>
+                            <excludes>
+                                <exclude>com.ups.seas.SeasApplication</exclude>
+                                <exclude>**/config/**</exclude>
+                                <exclude>**/exception/**</exclude>
+                                <exclude>**/model/**</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
 
-                  podman pull \
-                    --authfile "${LUCIUS_AUTH_FILE}" \
-                    "${SOURCE}"
+        </plugins>
+    </build>
 
-                  echo "Tagging image for UAT Artifact Registry..."
-
-                  podman tag \
-                    "${SOURCE}" \
-                    "${TARGET}"
-
-                  echo "Pushing image to UAT Artifact Registry..."
-
-                  podman push "${TARGET}"
-
-                  echo "##vso[task.setvariable variable=UatDeployedImage]${TARGET}"
-                  echo "##vso[task.setvariable variable=SkipUatDeployment]false"
-                displayName: Transfer image from Lucius to UAT GAR
-
-              - bash: |
-                  set -euo pipefail
-
-                  echo "Deploying UAT image:"
-                  echo "$(UatDeployedImage)"
-
-                  gcloud run deploy "$(CloudRunService)" \
-                    --project="$(GcpProject)" \
-                    --region="$(GcpRegion)" \
-                    --image="$(UatDeployedImage)" \
-                    --platform=managed \
-                    --no-traffic \
-                    --tag=candidate \
-                    --quiet
-                displayName: Deploy UAT candidate Cloud Run revision
-                condition: and(
-                  succeeded(),
-                  ne(variables['SkipUatDeployment'], 'true')
-                )
-
-              - bash: |
-                  set -euo pipefail
-
-                  READY_REVISION="$(
-                    gcloud run services describe "$(CloudRunService)" \
-                      --project="$(GcpProject)" \
-                      --region="$(GcpRegion)" \
-                      --format="value(status.latestReadyRevisionName)"
-                  )"
-
-                  if [ -z "${READY_REVISION}" ]; then
-                    echo "##vso[task.logissue type=error]No ready UAT Cloud Run revision was found."
-                    exit 1
-                  fi
-
-                  echo "UAT candidate revision is ready: ${READY_REVISION}"
-                displayName: Verify UAT candidate revision
-                condition: and(
-                  succeeded(),
-                  ne(variables['SkipUatDeployment'], 'true')
-                )
-
-              - bash: |
-                  echo "UAT deployment was skipped because no valid enterprise image tag was available."
-                displayName: UAT deployment skipped
-                condition: eq(
-                  variables['SkipUatDeployment'],
-                  'true'
-                )
+</project>
