@@ -1,9 +1,0 @@
-Sorry for the late reply.
-
-I wanted to provide a quick update on the Additional IDH Fields changes. We understand that this is a relatively small change, but it has taken a little longer than expected because, in parallel, we are migrating our existing pipelines to the newer pipeline environment. We wanted to complete the pipeline migration and deploy the changes through the new setup rather than continuing with the older pipelines, which has contributed to the delay.
-
-At this point, the new pipeline setup is almost complete, and we have successfully pushed the changes to the Dev environment. We are currently testing and validating the changes in Dev to make sure everything is working as expected.
-
-We expect to complete the remaining testing and wrap this up quickly this week. We will keep the team updated on the testing progress and let you know once we are ready to move forward.
-
-Thank you for your patience and understanding.
