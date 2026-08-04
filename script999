@@ -1,13 +1,20 @@
-Hi Team,
+- bash: |
+    set -euo pipefail
 
-We are currently working on the UPSers ETL application and migrating our existing Jenkins deployment pipelines to Azure DevOps (ADO). As part of this work, we have set up the ADO pipelines for our API, IDH, and IMRR Cloud Run services and are currently testing the deployments across environments.
+    READY_REVISION="$(
+      gcloud run services describe "$(CloudRunService)" \
+        --project="$(GcpProject)" \
+        --region="$(GcpRegion)" \
+        --format='value(status.latestReadyRevisionName)'
+    )"
 
-The pipeline is working successfully in DEV (gcp-emp-ep-dev). DEV is using Google Artifact Registry in the us-east4 region, and we are able to connect to the registry, transfer the container images, and deploy the Cloud Run revisions successfully.
+    echo "Promoting revision: ${READY_REVISION}"
 
-We are now testing the same setup for UAT, where the existing Google Artifact Registry is in us-central1. From the ADO runner, DNS resolution for us-central1-docker.pkg.dev is successful, but the HTTPS connection on port 443 is timing out. We also tested the same endpoint directly from GCP Cloud Shell in UAT, and the connection works successfully there.
+    gcloud run services update-traffic "$(CloudRunService)" \
+      --project="$(GcpProject)" \
+      --region="$(GcpRegion)" \
+      --to-revisions="${READY_REVISION}=100" \
+      --quiet
 
-We checked with the GCP team as well, and they suggested that the ADO runner may be going through an application proxy where specific hostnames need to be allowlisted.
-
-Could you please help us check whether the ADO runner we are using has an application proxy/egress configuration or hostname whitelist? If so, could you also check whether us-central1-docker.pkg.dev is currently allowed? us-east4-docker.pkg.dev is working from the ADO pipeline, but us-central1-docker.pkg.dev is timing out.
-
-I can also share the pipeline logs/screenshots showing the connectivity test if needed.
+    echo "Traffic successfully moved to ${READY_REVISION}"
+  displayName: Promote DEV revision to 100% traffic
