@@ -1,20 +1,5 @@
-- bash: |
-    set -euo pipefail
+Hi Crispin, Anjal wanted to understand a little better why we can’t use us-central1 for the UAT GAR.
 
-    READY_REVISION="$(
-      gcloud run services describe "$(CloudRunService)" \
-        --project="$(GcpProject)" \
-        --region="$(GcpRegion)" \
-        --format='value(status.latestReadyRevisionName)'
-    )"
+In the old Jenkins setup, UAT was using the GAR in us-central1, and that was working. With the new Azure DevOps pipeline, the runner can resolve us-central1-docker.pkg.dev, but the HTTPS connection on port 443 is timing out. We tested the same endpoint from GCP Cloud Shell and it works there.
 
-    echo "Promoting revision: ${READY_REVISION}"
-
-    gcloud run services update-traffic "$(CloudRunService)" \
-      --project="$(GcpProject)" \
-      --region="$(GcpRegion)" \
-      --to-revisions="${READY_REVISION}=100" \
-      --quiet
-
-    echo "Traffic successfully moved to ${READY_REVISION}"
-  displayName: Promote DEV revision to 100% traffic
+Since Jenkins was able to use us-central1, could you help us understand what is different with the ADO path and whether there is any network/proxy/allowlist restriction on the ADO runner side? We’re trying to determine whether we should get us-central1 enabled or use us-east4 instead.
