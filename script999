@@ -1,5 +1,2 @@
-Hi Crispin, Anjal wanted to understand a little better why we can’t use us-central1 for the UAT GAR.
-
-In the old Jenkins setup, UAT was using the GAR in us-central1, and that was working. With the new Azure DevOps pipeline, the runner can resolve us-central1-docker.pkg.dev, but the HTTPS connection on port 443 is timing out. We tested the same endpoint from GCP Cloud Shell and it works there.
-
-Since Jenkins was able to use us-central1, could you help us understand what is different with the ADO path and whether there is any network/proxy/allowlist restriction on the ADO runner side? We’re trying to determine whether we should get us-central1 enabled or use us-east4 instead.
+grep -Rni "emp-ep-cloud-sdk@gcp-emp-ep-dev\|activate-service-account\|GOOGLE_APPLICATION_CREDENTIALS" \
+  /opt/UPS/B2EEPEMPINFO 2>/dev/null | head -50
