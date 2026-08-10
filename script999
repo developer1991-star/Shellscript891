@@ -1,2 +1,17 @@
-grep -Rni "emp-ep-cloud-sdk@gcp-emp-ep-dev\|activate-service-account\|GOOGLE_APPLICATION_CREDENTIALS" \
-  /opt/UPS/B2EEPEMPINFO 2>/dev/null | head -50
+Yes. I’d give Doug a little more context so he can clearly see where the limitation is and what you need him to confirm:
+
+Hi Doug, just to provide a little more detail on our current setup and your GAR proxy repository suggestion.
+
+Our Azure DevOps pipeline currently runs using the EPE agent pool. Through the existing pipeline setup, the agent is able to connect to our JFrog instance and pull the container image from JFrog.
+
+The issue happens when we try to push that image into Google Artifact Registry. I checked with the ADO/EPE team, and they confirmed that the EPE agents have network restrictions. They currently support connectivity to GAR in us-east4 and the US multi-region, but our existing Artifact Registry and Cloud Run setup is in us-central1. Because of that, the EPE agent cannot directly push the image into our existing us-central1 GAR repository.
+
+That’s why I was considering creating a GAR repository in us-east4 first. The EPE agent could pull the image from JFrog and push it to the us-east4 GAR, and then we could copy the image from us-east4 GAR to our existing us-central1 GAR and continue deploying Cloud Run in us-central1. This would allow us to keep the existing Cloud Run architecture/location unchanged.
+
+Regarding your suggestion to create a GAR remote/proxy repository pointing directly to JFrog, I wanted to understand how authentication would work in that setup. Today, JFrog access happens through our existing pipeline/EPE-agent setup. If GAR connects directly to JFrog as the upstream repository, I assume GAR would need its own JFrog machine-to-machine credential/token rather than using the authentication available to the EPE agent.
+
+Is that correct? If so, I can check with the team that manages JFrog to see whether they can provide the appropriate credential/token for GAR. If that isn’t supported in our environment, then I think the us-east4 GAR → us-central1 GAR → Cloud Run approach may be our alternative.
+
+Please let me know if I’m understanding your proxy repository suggestion correctly, or if you had a different setup in mind.
+
+This version also avoids claiming that EPE itself performs the JFrog authentication. It tells Doug exactly what you know versus what you’re trying to confirm.
