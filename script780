@@ -1,35 +1,28 @@
-cat > test_firestore.py <<'PY'
-import json
-import gcsfs
+python - <<'PY'
+from google.cloud import firestore
+import google.auth
+import traceback
 
-from main import csv_to_firestore_move
+creds, project = google.auth.default()
 
-project_id = "gcp-emp-ep-dev"
-bucket = "emp-ep-gcs-seas-dev"
+print("AUTH PROJECT:", project)
+print("SERVICE ACCOUNT:",
+      getattr(creds, "service_account_email", "unknown"))
 
-json_file = "gs://emp-ep-gcs-seas-dev/working/IDH/IDH_20260821.json"
+try:
+    db = firestore.Client(project="gcp-emp-ep-dev")
 
-# Count records in the JSON
-fs = gcsfs.GCSFileSystem(project=project_id)
+    print("FIRESTORE PROJECT:", db.project)
 
-with fs.open(json_file, "r", encoding="utf-8") as f:
-    data = json.load(f)
+    ref = db.collection("Employees_test").document("permission_test_001")
 
-csv_count = len(data)
+    ref.set({
+        "test": True,
+        "source": "docker-direct-test"
+    })
 
-print("JSON RECORD COUNT:", csv_count)
+    print("SUCCESS: Firestore write worked")
 
-result = csv_to_firestore_move(
-    csv_count,                       # csv_count
-    json_file,                       # jsonFilePath
-    project_id,                      # project_id
-    bucket,                          # src_bucket_name
-    "N",                             # delete_indc
-    "emp-ep-secret-key",             # secret_key_name
-    "emp-ep-secret-passphrase",      # passphrase_key_name
-    "Employees_TEST",                # collection_name
-    "Audit_TEST"                     # aud_collection_name
-)
-
-print("FIRESTORE RESULT:", result)
+except Exception:
+    traceback.print_exc()
 PY
