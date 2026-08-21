@@ -1,7 +1,14 @@
-gcloud logging read \
-'protoPayload.serviceName="secretmanager.googleapis.com"
- AND protoPayload.methodName:"AddSecretVersion"
- AND protoPayload.resourceName:"emp-ep-secret-key"' \
---project=gcp-emp-ep-dev \
---limit=30 \
---format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.resourceName)"
+cat > /tmp/test_csv_to_json.py <<'PY'
+from main import csv_to_json
+
+source = "gs://emp-ep-gcs-seas-dev/working/IDH/test_decrypted_v11.txt"
+target = "gs://emp-ep-gcs-seas-dev/working/IDH/test_decrypted_v11.json"
+
+result = csv_to_json(
+    source,
+    target,
+    "gcp-emp-ep-dev"
+)
+
+print("csv_to_json result:", result)
+PY
