@@ -1,21 +1,35 @@
-cd /app
+import json
+import gcsfs
 
-python - <<'PY'
-import main
-import traceback
+from main import csv_to_firestore_move
 
-print("MAIN STORE PROJECT:", main.store.project)
+project_id = "gcp-emp-ep-dev"
+bucket = "emp-ep-gcs-seas-dev"
 
-try:
-    main.store.collection("Employees_test").document(
-        "main_store_permission_test"
-    ).set({
-        "test": True,
-        "source": "main-store-direct-test"
-    })
+json_file = (
+    "gs://emp-ep-gcs-seas-dev/"
+    "working/IDH/IDH_20260821.json"
+)
 
-    print("SUCCESS: main.store write worked")
+fs = gcsfs.GCSFileSystem(project=project_id)
 
-except Exception:
-    traceback.print_exc()
-PY
+with fs.open(json_file, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+csv_count = len(data)
+
+print("JSON RECORD COUNT:", csv_count)
+
+result = csv_to_firestore_move(
+    csv_count,
+    json_file,
+    project_id,
+    bucket,
+    "N",
+    "emp-ep-secret-key",
+    "emp-ep-secret-passphrase",
+    "Employees_test",
+    "Audit_TEST"
+)
+
+print("FIRESTORE RESULT:", result)
