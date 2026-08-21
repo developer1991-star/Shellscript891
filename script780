@@ -1,19 +1,7 @@
-python - <<'PY'
-import binascii
-import pgpy
-from google.cloud import secretmanager
-
-client = secretmanager.SecretManagerServiceClient()
-
-name = "projects/gcp-emp-ep-dev/secrets/emp-ep-secret-key/versions/latest"
-response = client.access_secret_version(request={"name": name})
-
-v = response.payload.data.decode("utf-8")
-v = binascii.a2b_base64(v)
-
-key, _ = pgpy.PGPKey.from_blob(v)
-
-print("PRIMARY:", key.key_algorithm)
-for sid, sk in key.subkeys.items():
-    print("SUBKEY:", sid, "ALGORITHM:", sk.key_algorithm)
-PY
+gcloud logging read \
+'protoPayload.serviceName="secretmanager.googleapis.com"
+ AND protoPayload.methodName:"AddSecretVersion"
+ AND protoPayload.resourceName:"emp-ep-secret-key"' \
+--project=gcp-emp-ep-dev \
+--limit=30 \
+--format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.resourceName)"
