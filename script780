@@ -1,14 +1,35 @@
-cat > /tmp/test_csv_to_json.py <<'PY'
-from main import csv_to_json
+cat > test_firestore.py <<'PY'
+import json
+import gcsfs
 
-source = "gs://emp-ep-gcs-seas-dev/working/IDH/test_decrypted_v11.txt"
-target = "gs://emp-ep-gcs-seas-dev/working/IDH/test_decrypted_v11.json"
+from main import csv_to_firestore_move
 
-result = csv_to_json(
-    source,
-    target,
-    "gcp-emp-ep-dev"
+project_id = "gcp-emp-ep-dev"
+bucket = "emp-ep-gcs-seas-dev"
+
+json_file = "gs://emp-ep-gcs-seas-dev/working/IDH/IDH_20260821.json"
+
+# Count records in the JSON
+fs = gcsfs.GCSFileSystem(project=project_id)
+
+with fs.open(json_file, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+csv_count = len(data)
+
+print("JSON RECORD COUNT:", csv_count)
+
+result = csv_to_firestore_move(
+    csv_count,                       # csv_count
+    json_file,                       # jsonFilePath
+    project_id,                      # project_id
+    bucket,                          # src_bucket_name
+    "N",                             # delete_indc
+    "emp-ep-secret-key",             # secret_key_name
+    "emp-ep-secret-passphrase",      # passphrase_key_name
+    "Employees_TEST",                # collection_name
+    "Audit_TEST"                     # aud_collection_name
 )
 
-print("csv_to_json result:", result)
+print("FIRESTORE RESULT:", result)
 PY
