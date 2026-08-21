@@ -1,104 +1,23 @@
-import firebase_admin
-from firebase_admin import credentials, firestore
+cat > inspect_prod_key.py <<'PY'
+import binascii
+import pgpy
+from google.cloud import secretmanager
 
-# -----------------------------
-# Project Configuration
-# -----------------------------
+project_id = "gcp-emp-ep-prod"
+secret_id = "emp-ep-secret-key"
 
-PROD_PROJECT = "gcp-emp-ep-prod"
-PROD_DATABASE = "(default)"
-PROD_COLLECTION = "Employees"
+client = secretmanager.SecretManagerServiceClient()
 
-UAT_PROJECT = "gcp-emp-ep-uat"
-UAT_DATABASE = "(default)"
-UAT_COLLECTION = "Employees"
+name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+response = client.access_secret_version(request={"name": name})
 
-DEV_PROJECT = "gcp-emp-ep-dev"
-DEV_DATABASE = "(default)"
-DEV_COLLECTION = "Employees"
+secret_value = response.payload.data.decode("utf-8")
+secret_value = binascii.a2b_base64(secret_value)
 
-# Choose: "PROD", "UAT", or "DEV"
-TARGET_ENV = "DEV"
+key, _ = pgpy.PGPKey.from_blob(secret_value)
 
+print("PRIMARY KEY ALGORITHM:", key.key_algorithm)
 
-# -----------------------------
-# Select Environment
-# -----------------------------
-
-if TARGET_ENV == "PROD":
-    project_id = PROD_PROJECT
-    database_id = PROD_DATABASE
-    collection_name = PROD_COLLECTION
-
-elif TARGET_ENV == "UAT":
-    project_id = UAT_PROJECT
-    database_id = UAT_DATABASE
-    collection_name = UAT_COLLECTION
-
-elif TARGET_ENV == "DEV":
-    project_id = DEV_PROJECT
-    database_id = DEV_DATABASE
-    collection_name = DEV_COLLECTION
-
-else:
-    raise ValueError("TARGET_ENV must be PROD, UAT, or DEV")
-
-
-# -----------------------------
-# Firebase Initialization
-# -----------------------------
-
-cred = credentials.Certificate("serviceAccountKey.json")
-
-firebase_admin.initialize_app(
-    cred,
-    {
-        "projectId": project_id
-    }
-)
-
-db = firestore.client(database_id=database_id)
-
-print(f"Environment: {TARGET_ENV}")
-print(f"Project: {project_id}")
-print(f"Database: {database_id}")
-print(f"Collection: {collection_name}")
-
-
-# -----------------------------
-# Update Employee Documents
-# -----------------------------
-
-employee_ref = db.collection(collection_name)
-
-updated_count = 0
-skipped_count = 0
-
-for doc in employee_ref.stream():
-    data = doc.to_dict()
-
-    fields_to_add = {}
-
-    if "Field A" not in data:
-        fields_to_add["Field A"] = ""
-
-    if "Field B" not in data:
-        fields_to_add["Field B"] = ""
-
-    if fields_to_add:
-        doc.reference.update(fields_to_add)
-
-        print(
-            f"Updated {doc.id}: "
-            f"{list(fields_to_add.keys())}"
-        )
-
-        updated_count += 1
-    else:
-        print(f"Skipped {doc.id}: Field A and Field B already exist")
-        skipped_count += 1
-
-
-print("\nCompleted.")
-print(f"Updated: {updated_count}")
-print(f"Skipped: {skipped_count}")
+for subkey_id, subkey in key.subkeys.items():
+    print("SUBKEY:", subkey_id, "ALGORITHM:", subkey.key_algorithm)
+PY
