@@ -1,23 +1,19 @@
-cat > inspect_prod_key.py <<'PY'
+python - <<'PY'
 import binascii
 import pgpy
 from google.cloud import secretmanager
 
-project_id = "gcp-emp-ep-prod"
-secret_id = "emp-ep-secret-key"
-
 client = secretmanager.SecretManagerServiceClient()
 
-name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+name = "projects/gcp-emp-ep-dev/secrets/emp-ep-secret-key/versions/latest"
 response = client.access_secret_version(request={"name": name})
 
-secret_value = response.payload.data.decode("utf-8")
-secret_value = binascii.a2b_base64(secret_value)
+v = response.payload.data.decode("utf-8")
+v = binascii.a2b_base64(v)
 
-key, _ = pgpy.PGPKey.from_blob(secret_value)
+key, _ = pgpy.PGPKey.from_blob(v)
 
-print("PRIMARY KEY ALGORITHM:", key.key_algorithm)
-
-for subkey_id, subkey in key.subkeys.items():
-    print("SUBKEY:", subkey_id, "ALGORITHM:", subkey.key_algorithm)
+print("PRIMARY:", key.key_algorithm)
+for sid, sk in key.subkeys.items():
+    print("SUBKEY:", sid, "ALGORITHM:", sk.key_algorithm)
 PY
