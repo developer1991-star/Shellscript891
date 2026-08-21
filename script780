@@ -1,28 +1,20 @@
+cd /app
+
 python - <<'PY'
-from google.cloud import firestore
-import google.auth
-import traceback
+import main
 
-creds, project = google.auth.default()
-
-print("AUTH PROJECT:", project)
-print("SERVICE ACCOUNT:",
-      getattr(creds, "service_account_email", "unknown"))
+print("MAIN STORE PROJECT:", main.store.project)
 
 try:
-    db = firestore.Client(project="gcp-emp-ep-dev")
-
-    print("FIRESTORE PROJECT:", db.project)
-
-    ref = db.collection("Employees_test").document("permission_test_001")
-
-    ref.set({
+    main.store.collection("Employees_test").document(
+        "main_store_permission_test"
+    ).set({
         "test": True,
-        "source": "docker-direct-test"
+        "source": "main-store-direct-test"
     })
 
-    print("SUCCESS: Firestore write worked")
+    print("SUCCESS: main.store Firestore write worked")
 
-except Exception:
-    traceback.print_exc()
+except Exception as e:
+    print("MAIN STORE ERROR:", type(e).__name__, str(e))
 PY
