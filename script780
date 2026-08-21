@@ -2,6 +2,7 @@ cd /app
 
 python - <<'PY'
 import main
+import traceback
 
 print("MAIN STORE PROJECT:", main.store.project)
 
@@ -13,8 +14,8 @@ try:
         "source": "main-store-direct-test"
     })
 
-    print("SUCCESS: main.store Firestore write worked")
+    print("SUCCESS: main.store write worked")
 
-except Exception as e:
-    print("MAIN STORE ERROR:", type(e).__name__, str(e))
+except Exception:
+    traceback.print_exc()
 PY
