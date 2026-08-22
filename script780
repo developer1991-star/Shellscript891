@@ -1,1 +1,22 @@
-Pipeline execution is encountering a Python package/library dependency issue. As recommended by the team, deferral.hcl is being updated to add the required package deferrals/version information for the affected Python dependencies. This change is intended to allow the pipeline to complete successfully without the package import/dependency error.
+
+python - <<'PY'
+import google.auth
+
+creds, project = google.auth.default()
+
+print("PROJECT:", project)
+print("SERVICE ACCOUNT:",
+      getattr(creds, "service_account_email", "unknown"))
+PY
+
+
+python - <<'PY'
+import main
+import traceback
+
+try:
+    result = main.file_move()
+    print("FILE_MOVE RESULT:", result)
+except Exception:
+    traceback.print_exc()
+PY
