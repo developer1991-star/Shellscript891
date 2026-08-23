@@ -166,3 +166,26 @@ def decrypt_and_save_file(
 
         msg = str(e)
         return 2, msg
+
+
+except NotImplementedError as pgpy_error:
+    print(
+        "PGPy algorithm not supported. "
+        "Trying GPG fallback."
+    )
+    print("PGPy error:", str(pgpy_error))
+
+    try:
+        content = decrypt_with_gpg(
+            contents,
+            private_key_bytes,
+            pass_id
+        )
+
+        print("GPG decryption successful")
+
+    except Exception as gpg_error:
+        print("GPG FALLBACK FAILED")
+        print("GPG ERROR TYPE:", type(gpg_error).__name__)
+        print("GPG ERROR:", str(gpg_error))
+        raise
