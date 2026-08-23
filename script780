@@ -1,22 +1,168 @@
+def decrypt_with_gpg(contents, private_key_bytes, passphrase):
+    """
+    GPG fallback for OpenPGP algorithms that PGPy cannot decrypt,
+    such as ElGamal.
+    """
 
-python - <<'PY'
-import google.auth
+    with tempfile.TemporaryDirectory() as tmpdir:
 
-creds, project = google.auth.default()
+        gpg_home = os.path.join(tmpdir, "gpg")
+        key_file = os.path.join(tmpdir, "private_key.asc")
+        encrypted_file = os.path.join(tmpdir, "input.pgp")
+        decrypted_file = os.path.join(tmpdir, "output.txt")
+        passphrase_file = os.path.join(tmpdir, "passphrase.txt")
 
-print("PROJECT:", project)
-print("SERVICE ACCOUNT:",
-      getattr(creds, "service_account_email", "unknown"))
-PY
+        os.mkdir(gpg_home)
+        os.chmod(gpg_home, 0o700)
+
+        # Write private key temporarily
+        with open(key_file, "wb") as f:
+            f.write(private_key_bytes)
+
+        # Write encrypted payload temporarily
+        with open(encrypted_file, "wb") as f:
+            f.write(contents)
+
+        # Write passphrase temporarily
+        with open(passphrase_file, "w", encoding="utf-8") as f:
+            f.write(passphrase)
+
+        os.chmod(passphrase_file, 0o600)
+
+        # Import key into isolated temporary GPG keyring
+        import_result = subprocess.run(
+            [
+                "gpg",
+                "--homedir", gpg_home,
+                "--batch",
+                "--import",
+                key_file
+            ],
+            capture_output=True,
+            text=True
+        )
+
+        if import_result.returncode != 0:
+            raise RuntimeError(
+                "GPG key import failed: " + import_result.stderr
+            )
+
+        # Decrypt
+        decrypt_result = subprocess.run(
+            [
+                "gpg",
+                "--homedir", gpg_home,
+                "--batch",
+                "--yes",
+                "--pinentry-mode", "loopback",
+                "--passphrase-file", passphrase_file,
+                "--output", decrypted_file,
+                "--decrypt", encrypted_file
+            ],
+            capture_output=True,
+            text=True
+        )
+
+        if decrypt_result.returncode != 0:
+            raise RuntimeError(
+                "GPG decryption failed: " + decrypt_result.stderr
+            )
+
+        with open(decrypted_file, "rb") as f:
+            return f.read()
 
 
-python - <<'PY'
-import main
-import traceback
+def decrypt_and_save_file(
+        projectid,
+        source_file,
+        source_bucket,
+        secret_id,
+        passid,
+        Target_file):
 
-try:
-    result = main.file_move()
-    print("FILE_MOVE RESULT:", result)
-except Exception:
-    traceback.print_exc()
-PY
+    try:
+        storage_client = storage.Client()
+
+        bucket = storage_client.get_bucket(source_bucket)
+        blob = bucket.blob(source_file)
+
+        # Download encrypted file from GCS
+        contents = blob.download_as_string()
+
+        # Parse encrypted PGP message
+        emsg = pgpy.PGPMessage.from_blob(contents)
+
+        print("content of message")
+
+        # Get private key from Secret Manager
+        my_secret_value = get_secrets(projectid, secret_id)
+
+        # Existing secret is base64 encoded
+        private_key_bytes = binascii.a2b_base64(my_secret_value)
+
+        # Load key with PGPy
+        key, _ = pgpy.PGPKey.from_blob(private_key_bytes)
+
+        print("got key")
+
+        # Get passphrase from Secret Manager
+        pass_id = get_secrets(projectid, passid)
+
+        try:
+            # Existing behavior - keep this as the normal path
+            print("Trying PGPy decryption")
+
+            with key.unlock(pass_id):
+                print("key unlocked")
+                print(key.is_unlocked)
+
+                content = key.decrypt(emsg).message
+
+            print("PGPy decryption successful")
+
+        except NotImplementedError as pgpy_error:
+
+            # PGPy cannot handle some algorithms such as ElGamal
+            print(
+                "PGPy algorithm not supported. "
+                "Trying GPG fallback."
+            )
+            print("PGPy error:", str(pgpy_error))
+
+            content = decrypt_with_gpg(
+                contents,
+                private_key_bytes,
+                pass_id
+            )
+
+            print("GPG decryption successful")
+
+        # PGPy can return text; GPG helper returns bytes
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+
+        # Upload decrypted file to GCS
+        blob = bucket.blob(Target_file)
+
+        print(blob)
+        print("before upload")
+
+        blob.upload_from_string(content)
+
+        print(
+            "Decrypted file stored as {} under {}."
+            .format(Target_file, bucket)
+        )
+
+        msg = ''
+        return 0, msg
+
+    except Exception as e:
+        print(
+            "Decryption failed:",
+            type(e).__name__,
+            str(e)
+        )
+
+        msg = str(e)
+        return 2, msg
