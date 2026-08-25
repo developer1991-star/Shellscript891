@@ -1,77 +1,3 @@
-def decrypt_with_gpg(contents, private_key_bytes, passphrase):
-    """
-    GPG fallback for OpenPGP algorithms that PGPy cannot decrypt,
-    such as ElGamal.
-    """
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-
-        gpg_home = os.path.join(tmpdir, "gpg")
-        key_file = os.path.join(tmpdir, "private_key.asc")
-        encrypted_file = os.path.join(tmpdir, "input.pgp")
-        decrypted_file = os.path.join(tmpdir, "output.txt")
-        passphrase_file = os.path.join(tmpdir, "passphrase.txt")
-
-        os.mkdir(gpg_home)
-        os.chmod(gpg_home, 0o700)
-
-        # Write private key temporarily
-        with open(key_file, "wb") as f:
-            f.write(private_key_bytes)
-
-        # Write encrypted payload temporarily
-        with open(encrypted_file, "wb") as f:
-            f.write(contents)
-
-        # Write passphrase temporarily
-        with open(passphrase_file, "w", encoding="utf-8") as f:
-            f.write(passphrase)
-
-        os.chmod(passphrase_file, 0o600)
-
-        # Import key into isolated temporary GPG keyring
-        import_result = subprocess.run(
-            [
-                "gpg",
-                "--homedir", gpg_home,
-                "--batch",
-                "--import",
-                key_file
-            ],
-            capture_output=True,
-            text=True
-        )
-
-        if import_result.returncode != 0:
-            raise RuntimeError(
-                "GPG key import failed: " + import_result.stderr
-            )
-
-        # Decrypt
-        decrypt_result = subprocess.run(
-            [
-                "gpg",
-                "--homedir", gpg_home,
-                "--batch",
-                "--yes",
-                "--pinentry-mode", "loopback",
-                "--passphrase-file", passphrase_file,
-                "--output", decrypted_file,
-                "--decrypt", encrypted_file
-            ],
-            capture_output=True,
-            text=True
-        )
-
-        if decrypt_result.returncode != 0:
-            raise RuntimeError(
-                "GPG decryption failed: " + decrypt_result.stderr
-            )
-
-        with open(decrypted_file, "rb") as f:
-            return f.read()
-
-
 def decrypt_and_save_file(
         projectid,
         source_file,
@@ -168,24 +94,77 @@ def decrypt_and_save_file(
         return 2, msg
 
 
-except NotImplementedError as pgpy_error:
-    print(
-        "PGPy algorithm not supported. "
-        "Trying GPG fallback."
-    )
-    print("PGPy error:", str(pgpy_error))
 
-    try:
-        content = decrypt_with_gpg(
-            contents,
-            private_key_bytes,
-            pass_id
+
+def decrypt_with_gpg(contents, private_key_bytes, passphrase):
+    """
+    GPG fallback for OpenPGP algorithms that PGPy cannot decrypt,
+    such as ElGamal.
+    """
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+
+        gpg_home = os.path.join(tmpdir, "gpg")
+        key_file = os.path.join(tmpdir, "private_key.asc")
+        encrypted_file = os.path.join(tmpdir, "input.pgp")
+        decrypted_file = os.path.join(tmpdir, "output.txt")
+        passphrase_file = os.path.join(tmpdir, "passphrase.txt")
+
+        os.mkdir(gpg_home)
+        os.chmod(gpg_home, 0o700)
+
+        # Write private key temporarily
+        with open(key_file, "wb") as f:
+            f.write(private_key_bytes)
+
+        # Write encrypted payload temporarily
+        with open(encrypted_file, "wb") as f:
+            f.write(contents)
+
+        # Write passphrase temporarily
+        with open(passphrase_file, "w", encoding="utf-8") as f:
+            f.write(passphrase)
+
+        os.chmod(passphrase_file, 0o600)
+
+        # Import key into isolated temporary GPG keyring
+        import_result = subprocess.run(
+            [
+                "gpg",
+                "--homedir", gpg_home,
+                "--batch",
+                "--import",
+                key_file
+            ],
+            capture_output=True,
+            text=True
         )
 
-        print("GPG decryption successful")
+        if import_result.returncode != 0:
+            raise RuntimeError(
+                "GPG key import failed: " + import_result.stderr
+            )
 
-    except Exception as gpg_error:
-        print("GPG FALLBACK FAILED")
-        print("GPG ERROR TYPE:", type(gpg_error).__name__)
-        print("GPG ERROR:", str(gpg_error))
-        raise
+        # Decrypt
+        decrypt_result = subprocess.run(
+            [
+                "gpg",
+                "--homedir", gpg_home,
+                "--batch",
+                "--yes",
+                "--pinentry-mode", "loopback",
+                "--passphrase-file", passphrase_file,
+                "--output", decrypted_file,
+                "--decrypt", encrypted_file
+            ],
+            capture_output=True,
+            text=True
+        )
+
+        if decrypt_result.returncode != 0:
+            raise RuntimeError(
+                "GPG decryption failed: " + decrypt_result.stderr
+            )
+
+        with open(decrypted_file, "rb") as f:
+            return f.read()
