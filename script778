@@ -1,39 +1,127 @@
-Subject: SEAS API – GTS Integration Details for DEV
+"CVE-2026-8286-curl-minimal" = {
+  name    = "9:curl-minimal"
+  version = "0:7.76.1-40.el9"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Hi Team,
+"CVE-2026-8286-libcurl-minimal" = {
+  name    = "9:libcurl-minimal"
+  version = "0:7.76.1-40.el9"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-The SEAS API setup for GTS is ready in the DEV environment. We have completed testing from our side and are able to get a successful response.
+"CVE-2026-8458-curl-minimal" = {
+  name    = "9:curl-minimal"
+  version = "0:7.76.1-40.el9"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Please find the integration details below.
+"CVE-2026-8458-libcurl-minimal" = {
+  name    = "9:libcurl-minimal"
+  version = "0:7.76.1-40.el9"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Environment: DEV
+"CVE-2025-15079-curl-minimal" = {
+  name    = "9:curl-minimal"
+  version = "0:7.76.1-40.el9"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-API Endpoint:
-https://seas-dev.ups.com/seas/api/employees/{employeeId}
+"CVE-2025-15079-libcurl-minimal" = {
+  name    = "9:libcurl-minimal"
+  version = "0:7.76.1-40.el9"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Method:
-GET
+"CVE-2026-69192-nodejs" = {
+  name    = "9:nodejs:22/nodejs"
+  version = "1:22.23.1-2.module+el9.8.0+24538+3f176d52"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-GTS Service Account:
-emp-ep-apigateway-gts@gcp-emp-ep-dev.iam.gserviceaccount.com
+"CVE-2026-69192-nodejs-full-i18n" = {
+  name    = "9:nodejs:22/nodejs-full-i18n"
+  version = "1:22.23.1-2.module+el9.8.0+24538+3f176d52"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-JWT Audience:
-GTS
+"CVE-2026-69192-nodejs-libs" = {
+  name    = "9:nodejs:22/nodejs-libs"
+  version = "1:22.23.1-2.module+el9.8.0+24538+3f176d52"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Authentication:
-Please generate a JWT using the GTS service account above, with the audience (aud) set to GTS.
+"CVE-2026-69192-npm" = {
+  name    = "9:nodejs:22/npm"
+  version = "1:10.9.8-1.22.23.1.2.module+el9.8.0+24538+3f176d52"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Please send the generated JWT as a Bearer token:
+"CVE-2025-47273-setuptools-53.0.0" = {
+  name    = "setuptools"
+  version = "53.0.0"
+  type    = "pypi"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Authorization: Bearer <JWT_TOKEN>
+"CVE-2025-47273-setuptools-68.2.2" = {
+  name    = "setuptools"
+  version = "68.2.2"
+  type    = "pypi"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Example request:
+"CVE-2024-6345-setuptools-53.0.0" = {
+  name    = "setuptools"
+  version = "53.0.0"
+  type    = "pypi"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-GET https://seas-dev.ups.com/seas/api/employees/{employeeId}
+"CVE-2024-6345-setuptools-68.2.2" = {
+  name    = "setuptools"
+  version = "68.2.2"
+  type    = "pypi"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-We have validated the setup from our side using the GTS service account and a JWT with audience GTS, and received a successful response.
+"CVE-2023-43804-urllib3" = {
+  name    = "urllib3"
+  version = "1.26.5"
+  type    = "pypi"
+  env     = "prod"
+  date    = "08/26/26"
+}
 
-Please test from your side and let us know if you have any issues or need any additional information.
-
-Thanks,
-Vvaka
+"CVE-2021-37972-libjpeg-turbo" = {
+  name    = "9:libjpeg-turbo"
+  version = "0:2.0.90-7.el9"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/26/26"
+}
