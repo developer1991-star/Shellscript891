@@ -1,34 +1,116 @@
-import json
-import time
-from google.auth import crypt
-from google.auth import jwt
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-KEY_FILE = r"C:\temp\gts-dev-key.json"
+PROD_PROJECT = "gcp-emp-ep-prod"
+PROD_DATABASE = "(default)"
+PROD_COLLECTION = "Employees"
 
-with open(KEY_FILE, "r") as f:
-    service_account_info = json.load(f)
+UAT_PROJECT = "gcp-emp-ep-uat"
+UAT_DATABASE = "(default)"
+UAT_COLLECTION = "Employees_test"
 
-signer = crypt.RSASigner.from_service_account_info(
-    service_account_info
+DEV_PROJECT = "gcp-emp-ep-dev"
+DEV_DATABASE = "(default)"
+DEV_COLLECTION = "Employees"
+
+# Choose: "PROD", "UAT", or "DEV"
+TARGET_ENV = "DEV"
+
+if TARGET_ENV == "PROD":
+    project_id = PROD_PROJECT
+    database_id = PROD_DATABASE
+    collection_name = PROD_COLLECTION
+
+elif TARGET_ENV == "UAT":
+    project_id = UAT_PROJECT
+    database_id = UAT_DATABASE
+    collection_name = UAT_COLLECTION
+
+elif TARGET_ENV == "DEV":
+    project_id = DEV_PROJECT
+    database_id = DEV_DATABASE
+    collection_name = DEV_COLLECTION
+
+else:
+    raise ValueError("TARGET_ENV must be PROD, UAT, or DEV")
+
+
+cred = credentials.ApplicationDefault()
+
+firebase_admin.initialize_app(
+    cred,
+    {
+        "projectId": project_id
+    }
 )
 
-now = int(time.time())
+db = firestore.client()
 
-payload = {
-    "iss": service_account_info["client_email"],
-    "sub": service_account_info["client_email"],
-    "aud": "GTS",
-    "iat": now,
-    "exp": now + 3600
-}
+print(f"Environment: {TARGET_ENV}")
+print(f"Project: {project_id}")
+print(f"Database: {database_id}")
+print(f"Collection: {collection_name}")
 
-token = jwt.encode(
-    signer,
-    payload,
-    key_id=service_account_info["private_key_id"]
-)
+employee_ref = db.collection(collection_name)
 
-if isinstance(token, bytes):
-    token = token.decode("utf-8")
+updated_count = 0
+skipped_count = 0
 
-print(token)
+BATCH_SIZE = 200
+last_doc = None
+
+while True:
+    query = employee_ref.order_by("__name__").limit(BATCH_SIZE)
+
+    if last_doc is not None:
+        query = query.start_after(last_doc)
+
+    docs = list(query.stream())
+
+    if not docs:
+        break
+
+    for doc in docs:
+        data = doc.to_dict()
+
+        fields_to_add = {}
+
+        if "employeeJobDotQualifier" not in data:
+            fields_to_add["employeeJobDotQualifier"] = ""
+
+        if "terminationReasonCode" not in data:
+            fields_to_add["terminationReasonCode"] = ""
+
+        if "lastModified" not in data:
+            fields_to_add["lastModified"] = ""
+
+        if fields_to_add:
+            doc.reference.update(fields_to_add)
+
+            print(
+                f"Updated {doc.id}: "
+                f"{list(fields_to_add.keys())}"
+            )
+
+            updated_count += 1
+
+        else:
+            print(
+                f"Skipped {doc.id}: "
+                f"Field A and Field B already exist"
+            )
+
+            skipped_count += 1
+
+    last_doc = docs[-1]
+
+    print(
+        f"Batch complete - "
+        f"Updated: {updated_count}, "
+        f"Skipped: {skipped_count}"
+    )
+
+
+print("\nCompleted.")
+print(f"Updated: {updated_count}")
+print(f"Skipped: {skipped_count}")
