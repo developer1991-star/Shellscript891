@@ -1,79 +1,27 @@
-"curl_minimal_0_7_76_1_40_el9" = {
-  name    = "9:curl-minimal"
-  version = "0:7.76.1-40.el9"
-  type    = "rpm"
-  env     = "prod"
-  date    = "08/26/26"
-}
+cp Dockerfile Dockerfile.jfrog.backup
 
-"libcurl_minimal_0_7_76_1_40_el9" = {
-  name    = "9:libcurl-minimal"
-  version = "0:7.76.1-40.el9"
-  type    = "rpm"
-  env     = "prod"
-  date    = "08/26/26"
-}
+cat > Dockerfile <<'EOF'
+FROM python:3.12-slim
 
-"nodejs_22_23_1" = {
-  name    = "9:nodejs:22/nodejs"
-  version = "1:22.23.1-2.module+el9.8.0+24538+3f176d52"
-  type    = "rpm"
-  env     = "prod"
-  date    = "08/26/26"
-}
+ENV PYTHONUNBUFFERED=1
+ENV APP_HOME=/app
+ENV PORT=8080
 
-"nodejs_full_i18n_22_23_1" = {
-  name    = "9:nodejs:22/nodejs-full-i18n"
-  version = "1:22.23.1-2.module+el9.8.0+24538+3f176d52"
-  type    = "rpm"
-  env     = "prod"
-  date    = "08/26/26"
-}
+WORKDIR ${APP_HOME}
 
-"nodejs_libs_22_23_1" = {
-  name    = "9:nodejs:22/nodejs-libs"
-  version = "1:22.23.1-2.module+el9.8.0+24538+3f176d52"
-  type    = "rpm"
-  env     = "prod"
-  date    = "08/26/26"
-}
+COPY requirements.txt .
 
-"npm_10_9_8" = {
-  name    = "9:nodejs:22/npm"
-  version = "1:10.9.8-1.22.23.1.2.module+el9.8.0+24538+3f176d52"
-  type    = "rpm"
-  env     = "prod"
-  date    = "08/26/26"
-}
+RUN python -m pip install --upgrade pip && \
+    python -m pip install --no-cache-dir -r requirements.txt
 
-"setuptools_53_0_0" = {
-  name    = "setuptools"
-  version = "53.0.0"
-  type    = "pypi"
-  env     = "prod"
-  date    = "08/26/26"
-}
+COPY . .
 
-"setuptools_68_2_2" = {
-  name    = "setuptools"
-  version = "68.2.2"
-  type    = "pypi"
-  env     = "prod"
-  date    = "08/26/26"
-}
+RUN chmod -R 755 /app && \
+    chown -R 1001:1001 /app
 
-"urllib3_1_26_5" = {
-  name    = "urllib3"
-  version = "1.26.5"
-  type    = "pypi"
-  env     = "prod"
-  date    = "08/26/26"
-}
+USER 1001
 
-"libjpeg_turbo_2_0_90_7_el9" = {
-  name    = "9:libjpeg-turbo"
-  version = "0:2.0.90-7.el9"
-  type    = "rpm"
-  env     = "prod"
-  date    = "08/26/26"
-}
+EXPOSE 8080
+
+CMD ["sh", "-c", "python -m uvicorn main:app --host=0.0.0.0 --port=${PORT:-8080}"]
+EOF
