@@ -1,3 +1,13 @@
+"vim_filesystem_8_2_2637_26_el9_8_10" = {
+  name    = "9:vim-filesystem"
+  version = "2:8.2.2637-26.el9_8.10"
+  type    = "rpm"
+  env     = "prod"
+  date    = "08/27/26"
+}
+
+
+
 cp Dockerfile Dockerfile.jfrog.backup
 
 cat > Dockerfile <<'EOF'
