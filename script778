@@ -25,3 +25,69 @@ EXPOSE 8080
 
 CMD ["sh", "-c", "python -m uvicorn main:app --host=0.0.0.0 --port=${PORT:-8080}"]
 EOF
+
+
+#!/bin/bash
+
+set -euo pipefail
+
+# -----------------------------
+# Configuration
+# -----------------------------
+PROJECT_ID="gcp-emp-ep-dev"
+REGION="us-east4"
+REPOSITORY="seas-artifact-registry"
+IMAGE="upsers-cloudrun-etl-idh"
+
+# Pass tag as first argument.
+# Example: ./build_push.sh 0.1.1-manual1
+TAG="${1:-0.1.1-manual1}"
+
+IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE}:${TAG}"
+
+echo "========================================"
+echo "Project    : ${PROJECT_ID}"
+echo "Region     : ${REGION}"
+echo "Repository : ${REPOSITORY}"
+echo "Image      : ${IMAGE}"
+echo "Tag        : ${TAG}"
+echo "Image URI  : ${IMAGE_URI}"
+echo "========================================"
+
+# Make sure we are pointing to the correct GCP project
+CURRENT_PROJECT=$(gcloud config get-value project 2>/dev/null)
+
+if [ "${CURRENT_PROJECT}" != "${PROJECT_ID}" ]; then
+    echo "ERROR: Current GCP project is ${CURRENT_PROJECT}"
+    echo "Expected: ${PROJECT_ID}"
+    exit 1
+fi
+
+echo ""
+echo "Authenticating Docker with Google Artifact Registry..."
+
+gcloud auth configure-docker \
+    "${REGION}-docker.pkg.dev" \
+    --quiet
+
+echo ""
+echo "Building Docker image..."
+
+docker build \
+    -t "${IMAGE_URI}" \
+    .
+
+echo ""
+echo "Docker build successful."
+
+echo ""
+echo "Pushing image to Artifact Registry..."
+
+docker push "${IMAGE_URI}"
+
+echo ""
+echo "========================================"
+echo "BUILD AND PUSH SUCCESSFUL"
+echo ""
+echo "${IMAGE_URI}"
+echo "========================================"
