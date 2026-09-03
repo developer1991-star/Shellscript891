@@ -7,6 +7,65 @@
 }
 
 
+"systemd_252_67_el9_8_4" = {
+  name    = "9:systemd"
+  version = "0:252-67.el9_8.4"
+  type    = "rpm"
+  env     = "prod"
+  date    = "09/03/26"
+},
+
+"systemd_libs_252_67_el9_8_4" = {
+  name    = "9:systemd-libs"
+  version = "0:252-67.el9_8.4"
+  type    = "rpm"
+  env     = "prod"
+  date    = "09/03/26"
+},
+
+"systemd_pam_252_67_el9_8_4" = {
+  name    = "9:systemd-pam"
+  version = "0:252-67.el9_8.4"
+  type    = "rpm"
+  env     = "prod"
+  date    = "09/03/26"
+},
+
+"systemd_rpm_macros_252_67_el9_8_4" = {
+  name    = "9:systemd-rpm-macros"
+  version = "0:252-67.el9_8.4"
+  type    = "rpm"
+  env     = "prod"
+  date    = "09/03/26"
+},
+
+"rsync_3_1_3_19_el8_7_1" = {
+  name    = "8:rsync"
+  version = "0:3.1.3-19.el8_7.1"
+  type    = "rpm"
+  env     = "prod"
+  date    = "09/03/26"
+},
+
+"curl_7_61_1_34_el8_10_2" = {
+  name    = "8:curl"
+  version = "0:7.61.1-34.el8_10.2"
+  type    = "rpm"
+  env     = "prod"
+  date    = "09/03/26"
+},
+
+"libcurl_7_61_1_34_el8_10_2" = {
+  name    = "8:libcurl"
+  version = "0:7.61.1-34.el8_10.2"
+  type    = "rpm"
+  env     = "prod"
+  date    = "09/03/26"
+},
+
+
+
+
 
 cp Dockerfile Dockerfile.jfrog.backup
 
