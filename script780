@@ -1,3 +1,35 @@
+
+stages:
+
+- ${{ if and(
+      eq(parameters.runBuild, false),
+      or(
+        eq(parameters.deployDev, true),
+        eq(parameters.deployUat, true),
+        eq(parameters.deployProd, true)
+      )
+    ) }}:
+
+  - stage: Validate_Image
+    displayName: Validate existing image
+
+    jobs:
+    - job: ValidateImageVersion
+      displayName: Validate image version
+
+      steps:
+      - bash: |
+          if [ "${{ parameters.imageVersion }}" = "NOT_REQUIRED" ]; then
+            echo "ERROR: Existing image version is required when Build new image is unchecked."
+            exit 1
+          fi
+
+          echo "Using existing image version:"
+          echo "${{ parameters.imageVersion }}"
+        displayName: Validate image version
+
+
+
 def decrypt_and_save_file(
         projectid,
         source_file,
