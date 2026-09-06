@@ -1,4 +1,94 @@
+- bash: |
+    set -euo pipefail
 
+    echo "Deploying PROD DR image:"
+    echo "$(ProdDeployedImage)"
+
+    gcloud run deploy "$(CloudRunDrService)" \
+      --project="$(GcpProject)" \
+      --region="$(GcpDrRegion)" \
+      --image="$(ProdDeployedImage)" \
+      --platform=managed \
+      --no-traffic \
+      --no-use-http2 \
+      --quiet
+
+  displayName: Deploy PROD DR candidate Cloud Run revision
+  condition: and(
+    succeeded(),
+    ne(variables['SkipProdDeployment'], 'true')
+  )
+
+
+
+- bash: |
+    set -euo pipefail
+
+    CREATED_REVISION="$(
+      gcloud run services describe "$(CloudRunDrService)" \
+        --project="$(GcpProject)" \
+        --region="$(GcpDrRegion)" \
+        --format='value(status.latestCreatedRevisionName)'
+    )"
+
+    READY_REVISION="$(
+      gcloud run services describe "$(CloudRunDrService)" \
+        --project="$(GcpProject)" \
+        --region="$(GcpDrRegion)" \
+        --format='value(status.latestReadyRevisionName)'
+    )"
+
+    echo "DR created revision: ${CREATED_REVISION}"
+    echo "DR ready revision:   ${READY_REVISION}"
+
+    if [ "${CREATED_REVISION}" != "${READY_REVISION}" ]; then
+      echo "##vso[task.logissue type=error]The new DR Cloud Run revision did not become ready."
+      exit 1
+    fi
+
+    echo "DR candidate revision is ready: ${READY_REVISION}"
+
+  displayName: Verify PROD DR candidate revision
+  condition: and(
+    succeeded(),
+    ne(variables['SkipProdDeployment'], 'true')
+  )
+
+
+- bash: |
+    set -euo pipefail
+
+    READY_REVISION="$(
+      gcloud run services describe "$(CloudRunDrService)" \
+        --project="$(GcpProject)" \
+        --region="$(GcpDrRegion)" \
+        --format='value(status.latestReadyRevisionName)'
+    )"
+
+    echo "Promoting DR revision: ${READY_REVISION}"
+
+    gcloud run services update-traffic "$(CloudRunDrService)" \
+      --project="$(GcpProject)" \
+      --region="$(GcpDrRegion)" \
+      --to-revisions="${READY_REVISION}=100" \
+      --quiet
+
+    echo "DR traffic successfully moved to ${READY_REVISION}"
+
+  displayName: Promote PROD DR revision to 100% traffic
+  condition: and(
+    succeeded(),
+    ne(variables['SkipProdDeployment'], 'true')
+  )
+
+
+
+
+
+
+
+
+code to put image to jfrog prod bucket
 - bash: |
     set -euo pipefail
 
