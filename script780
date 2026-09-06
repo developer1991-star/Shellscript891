@@ -1,4 +1,55 @@
 
+- bash: |
+    set -euo pipefail
+
+    IMAGE_TAG="$(EnterpriseImageTag)"
+
+    SOURCE="$(SourceImage):${IMAGE_TAG}"
+    PROD_TARGET="$(LuciusProd):${IMAGE_TAG}"
+
+    echo "Source image: ${SOURCE}"
+    echo "JFrog PROD target: ${PROD_TARGET}"
+
+    LUCIUS_AUTH_FILE="$(Agent.TempDirectory)/lucius-auth-prod.json"
+
+    cp "$(LuciusConfigProd.secureFilePath)" \
+       "${LUCIUS_AUTH_FILE}"
+
+    chmod 600 "${LUCIUS_AUTH_FILE}"
+
+    echo "Authenticating to Lucius/JFrog PROD..."
+    podman login \
+      --authfile="${LUCIUS_AUTH_FILE}" \
+      --get-login \
+      lucius.ups.com
+
+    echo "Tagging image for PROD JFrog..."
+    podman tag \
+      "${SOURCE}" \
+      "${PROD_TARGET}"
+
+    echo "Pushing image to PROD JFrog..."
+    podman push \
+      --authfile="${LUCIUS_AUTH_FILE}" \
+      "${PROD_TARGET}"
+
+    echo "Image successfully pushed to PROD JFrog:"
+    echo "${PROD_TARGET}"
+
+  displayName: Push image to Lucius PROD
+  condition: and(
+    succeeded(),
+    ne(variables['SkipProdDeployment'], 'true')
+  )
+
+
+
+
+
+
+
+
+
 stages:
 
 - ${{ if and(
