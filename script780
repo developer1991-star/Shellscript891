@@ -1,3 +1,8 @@
+
+gcloud run revisions list --service=upsers-cloudrun-etl-idh-dr --project=gcp-emp-ep-prod --region=us-east4 --format="table(metadata.name,status.conditions[?type='Ready'].status,status.conditions[?type='Ready'].reason)"
+
+
+
 gcloud login using cloudrun admin key
 gcp-emp-ep-prod-cd-key.json
 
