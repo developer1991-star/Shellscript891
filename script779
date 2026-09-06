@@ -2,35 +2,47 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 PROJECT_ID = "gcp-emp-ep-prod"
-DATABASE_ID = "YOUR_DATABASE_ID"
 
 cred = credentials.ApplicationDefault()
 firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
 
-db = firestore.client(database_id=DATABASE_ID)
+db = firestore.client()
+
+collection = db.collection("Employees")
 
 missing_count = 0
 total_count = 0
+last_doc = None
+BATCH_SIZE = 500
 
-for doc in db.collection("employee").stream():
-    total_count += 1
-    data = doc.to_dict()
+while True:
+    query = collection.order_by("__name__").limit(BATCH_SIZE)
 
-    if (
-        "employeeJobDotQualifier" not in data
-        or "terminationReasonCode" not in data
-        or "lastModified" not in data
-    ):
-        missing_count += 1
+    if last_doc is not None:
+        query = query.start_after(last_doc)
 
-print(f"Total employees: {total_count}")
-print(f"Missing one or more of the 3 fields: {missing_count}")
+    docs = list(query.stream())
 
+    if not docs:
+        break
 
+    for doc in docs:
+        data = doc.to_dict()
+        total_count += 1
 
+        if (
+            "employeeJobDotQualifier" not in data
+            or "terminationReasonCode" not in data
+            or "lastModified" not in data
+        ):
+            missing_count += 1
 
+    last_doc = docs[-1]
 
+    print(f"Scanned: {total_count}, Missing: {missing_count}")
 
+print(f"\nTotal records: {total_count}")
+print(f"Missing any of the 3 fields: {missing_count}")
 
 
 
