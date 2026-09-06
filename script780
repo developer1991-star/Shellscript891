@@ -1,3 +1,24 @@
+gcloud login using cloudrun admin key
+gcp-emp-ep-prod-cd-key.json
+
+
+
+gcloud run revisions list \
+  --service=upsers-cloudrun-etl-idh-prod \
+  --region=us-central1 \
+  --project=gcp-emp-ep-prod
+
+gcloud run services update-traffic upsers-cloudrun-etl-idh-prod \
+
+  --region=us-central1 \
+
+  --project=gcp-emp-ep-prod \
+
+  --to-revisions=<OLD_GOOD_REVISION>=100
+
+
+
+
 - bash: |
     set -euo pipefail
 
