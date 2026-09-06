@@ -1,6 +1,44 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 
+PROJECT_ID = "gcp-emp-ep-prod"
+DATABASE_ID = "YOUR_DATABASE_ID"
+
+cred = credentials.ApplicationDefault()
+firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
+
+db = firestore.client(database_id=DATABASE_ID)
+
+missing_count = 0
+total_count = 0
+
+for doc in db.collection("employee").stream():
+    total_count += 1
+    data = doc.to_dict()
+
+    if (
+        "employeeJobDotQualifier" not in data
+        or "terminationReasonCode" not in data
+        or "lastModified" not in data
+    ):
+        missing_count += 1
+
+print(f"Total employees: {total_count}")
+print(f"Missing one or more of the 3 fields: {missing_count}")
+
+
+
+
+
+
+
+
+
+
+
+import firebase_admin
+from firebase_admin import credentials, firestore
+
 PROD_PROJECT = "gcp-emp-ep-prod"
 PROD_DATABASE = "(default)"
 PROD_COLLECTION = "Employees"
