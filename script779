@@ -2,6 +2,101 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 PROJECT_ID = "gcp-emp-ep-prod"
+COLLECTION = "Employees"
+
+PROCESS_BATCH_SIZE = 30000
+WRITE_BATCH_SIZE = 500
+
+cred = credentials.ApplicationDefault()
+firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
+
+db = firestore.client()
+employee_ref = db.collection(COLLECTION)
+
+# Get total count for percentage
+count_result = employee_ref.count().get()
+total_docs = count_result[0][0].value
+
+print(f"Total Employees: {total_docs}")
+
+processed = 0
+updated = 0
+last_doc = None
+
+while True:
+    query = employee_ref.order_by("__name__").limit(PROCESS_BATCH_SIZE)
+
+    if last_doc is not None:
+        query = query.start_after(last_doc)
+
+    docs = list(query.stream())
+
+    if not docs:
+        break
+
+    batch = db.batch()
+    write_count = 0
+
+    for doc in docs:
+        data = doc.to_dict()
+
+        fields_to_add = {}
+
+        if "employeeJobDotQualifier" not in data:
+            fields_to_add["employeeJobDotQualifier"] = ""
+
+        if "terminationReasonCode" not in data:
+            fields_to_add["terminationReasonCode"] = ""
+
+        if "lastModified" not in data:
+            fields_to_add["lastModified"] = ""
+
+        if fields_to_add:
+            batch.update(doc.reference, fields_to_add)
+            write_count += 1
+            updated += 1
+
+        # Commit every 500 writes
+        if write_count == WRITE_BATCH_SIZE:
+            batch.commit()
+            batch = db.batch()
+            write_count = 0
+
+        processed += 1
+
+    # Commit remaining writes
+    if write_count > 0:
+        batch.commit()
+
+    last_doc = docs[-1]
+
+    percentage = (processed / total_docs) * 100
+
+    print(
+        f"Processed: {processed}/{total_docs} "
+        f"({percentage:.2f}%) | Updated: {updated}"
+    )
+
+print("\nCompleted")
+print(f"Total scanned: {processed}")
+print(f"Total updated: {updated}")
+print("100% complete")
+
+
+
+
+
+
+
+
+
+
+
+
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+PROJECT_ID = "gcp-emp-ep-prod"
 
 cred = credentials.ApplicationDefault()
 firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
