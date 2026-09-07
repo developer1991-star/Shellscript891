@@ -1,163 +1,27 @@
-using Microsoft.AspNetCore.Http;
-using PCPM.Session;
-using System.Globalization;
-using System.Security.Cryptography;
-
 namespace PCPM.Web.Session;
 
-public class PcpmSessionService : IPcpmSessionService
+public interface IPcpmSessionService
 {
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    string CreateSession(string userId);
 
-    public PcpmSessionService(IHttpContextAccessor httpContextAccessor)
-    {
-        _httpContextAccessor = httpContextAccessor;
-    }
+    string? GetSessionId();
 
-    private ISession Session
-    {
-        get
-        {
-            var session = _httpContextAccessor.HttpContext?.Session;
+    string? GetUserId();
 
-            if (session == null)
-            {
-                throw new InvalidOperationException(
-                    "HTTP session is not available.");
-            }
+    void SetCurrentScreen(string screen);
+    string? GetCurrentScreen();
 
-            return session;
-        }
-    }
+    void SetPreviousScreen(string screen);
+    string? GetPreviousScreen();
 
-    // -------------------------------------------------
-    // CREATE PCPM SESSION
-    // -------------------------------------------------
-    public string CreateSession(string userId)
-    {
-        Clear();
+    void SetJobNumber(string jobNumber);
+    string? GetJobNumber();
 
-        var sessionId =
-            RandomNumberGenerator
-                .GetInt32(1, 1_000_000)
-                .ToString(
-                    "D6",
-                    CultureInfo.InvariantCulture);
+    void SetFunctionalArea(string functionalArea);
+    string? GetFunctionalArea();
 
-        Session.SetString(
-            PcpmSessionKeys.SessionId,
-            sessionId);
+    void SetJobSequence(string jobSequence);
+    string? GetJobSequence();
 
-        Session.SetString(
-            PcpmSessionKeys.UserId,
-            userId);
-
-        return sessionId;
-    }
-
-    // -------------------------------------------------
-    // SESSION ID
-    // -------------------------------------------------
-    public string? GetSessionId()
-    {
-        return Session.GetString(
-            PcpmSessionKeys.SessionId);
-    }
-
-    // -------------------------------------------------
-    // USER ID
-    // -------------------------------------------------
-    public string? GetUserId()
-    {
-        return Session.GetString(
-            PcpmSessionKeys.UserId);
-    }
-
-    // -------------------------------------------------
-    // CURRENT SCREEN
-    // -------------------------------------------------
-    public void SetCurrentScreen(string screen)
-    {
-        Session.SetString(
-            PcpmSessionKeys.CurrentScreen,
-            screen);
-    }
-
-    public string? GetCurrentScreen()
-    {
-        return Session.GetString(
-            PcpmSessionKeys.CurrentScreen);
-    }
-
-    // -------------------------------------------------
-    // PREVIOUS SCREEN
-    // -------------------------------------------------
-    public void SetPreviousScreen(string screen)
-    {
-        Session.SetString(
-            PcpmSessionKeys.PreviousScreen,
-            screen);
-    }
-
-    public string? GetPreviousScreen()
-    {
-        return Session.GetString(
-            PcpmSessionKeys.PreviousScreen);
-    }
-
-    // -------------------------------------------------
-    // JOB NUMBER
-    // -------------------------------------------------
-    public void SetJobNumber(string jobNumber)
-    {
-        Session.SetString(
-            PcpmSessionKeys.JobNumber,
-            jobNumber);
-    }
-
-    public string? GetJobNumber()
-    {
-        return Session.GetString(
-            PcpmSessionKeys.JobNumber);
-    }
-
-    // -------------------------------------------------
-    // FUNCTIONAL AREA
-    // -------------------------------------------------
-    public void SetFunctionalArea(string functionalArea)
-    {
-        Session.SetString(
-            PcpmSessionKeys.FunctionalArea,
-            functionalArea);
-    }
-
-    public string? GetFunctionalArea()
-    {
-        return Session.GetString(
-            PcpmSessionKeys.FunctionalArea);
-    }
-
-    // -------------------------------------------------
-    // JOB SEQUENCE
-    // -------------------------------------------------
-    public void SetJobSequence(string jobSequence)
-    {
-        Session.SetString(
-            PcpmSessionKeys.JobSequence,
-            jobSequence);
-    }
-
-    public string? GetJobSequence()
-    {
-        return Session.GetString(
-            PcpmSessionKeys.JobSequence);
-    }
-
-    // -------------------------------------------------
-    // CLEAR SESSION
-    // -------------------------------------------------
-    public void Clear()
-    {
-        Session.Clear();
-    }
+    void Clear();
 }
