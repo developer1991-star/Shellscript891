@@ -1,8 +1,10 @@
 namespace PCPM.Application.D158500;
 
-public interface ID158500Repository
+public class D158500JobRecord
 {
-    Task<D158500JobRecord?> LoadJobRecordAsync(
-        string jobNumber,
-        CancellationToken cancellationToken = default);
+    public string JobNumber { get; set; } = string.Empty;
+
+    public string Status { get; set; } = string.Empty;
+
+    public string DelFlag { get; set; } = string.Empty;
 }
