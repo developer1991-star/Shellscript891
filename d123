@@ -1,18 +1,42 @@
-namespace PCPM.Application.D158500;
-
-public interface ID158500Repository
+public async Task<D158500Result> LoadJobSummaryAsync(
+    string jobNumber,
+    CancellationToken cancellationToken = default)
 {
-    Task<D158500Result> LoadJobSummaryAsync(
-        string jobNumber,
-        CancellationToken cancellationToken = default);
+    var jobRecord = await LoadJobRecordAsync(
+        jobNumber,
+        cancellationToken);
 
-    Task<string?> GetPreviousJobNumberAsync(
-        string currentJobNumber,
-        CancellationToken cancellationToken = default);
+    if (jobRecord == null)
+    {
+        return D158500Result.Fail("NO RECORDS FOUND AT ALL");
+    }
 
-    Task<string?> GetNextJobNumberAsync(
-        string currentJobNumber,
-        CancellationToken cancellationToken = default);
+    var result = D158500Result.Ok(
+        nextScreen: "D158500",
+        jobNumber: jobRecord.JobNumber);
+
+    result.Rows = new List<D158500StatusRow>();
+
+    // Later we will populate:
+    // result.Rows
+    // result.Remark
+    // result.LastUpdated
+
+    return result;
 }
 
+public Task<string?> GetPreviousJobNumberAsync(
+    string currentJobNumber,
+    CancellationToken cancellationToken = default)
+{
+    // Temporary until we add the real SQL
+    return Task.FromResult<string?>(null);
+}
 
+public Task<string?> GetNextJobNumberAsync(
+    string currentJobNumber,
+    CancellationToken cancellationToken = default)
+{
+    // Temporary until we add the real SQL
+    return Task.FromResult<string?>(null);
+}
