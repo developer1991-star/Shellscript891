@@ -1,70 +1,8 @@
-using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
-using PCPM.Application.D158500;
+namespace PCPM.Application.D158500;
 
-namespace PCPM.Infrastructure.D158500;
-
-public class D158500Repository : ID158500Repository
+public interface ID158500Repository
 {
-    private readonly string _connectionString;
-
-    public D158500Repository(IConfiguration configuration)
-    {
-        _connectionString =
-            configuration.GetConnectionString("PcpmDatabase")
-            ?? throw new InvalidOperationException(
-                "PcpmDatabase connection string was not found.");
-    }
-
-    public async Task<D158500JobRecord?> LoadJobRecordAsync(
+    Task<D158500JobRecord?> LoadJobRecordAsync(
         string jobNumber,
-        CancellationToken cancellationToken = default)
-    {
-        const string sql = """
-            SELECT TOP 1
-                   JOBNO,
-                   STATUS,
-                   DELFLAG
-            FROM dbo.YOUR_JOB_TABLE
-            WHERE JOBNO >= @JobNumber
-              AND STATUS = '01'
-              AND ISNULL(DELFLAG, '') = ''
-            ORDER BY JOBNO
-            """;
-
-        await using var connection =
-            new SqlConnection(_connectionString);
-
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command =
-            new SqlCommand(sql, connection);
-
-        command.Parameters.AddWithValue(
-            "@JobNumber",
-            jobNumber);
-
-        await using var reader =
-            await command.ExecuteReaderAsync(cancellationToken);
-
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new D158500JobRecord
-        {
-            JobNumber =
-                reader["JOBNO"]?.ToString()?.Trim()
-                ?? string.Empty,
-
-            Status =
-                reader["STATUS"]?.ToString()?.Trim()
-                ?? string.Empty,
-
-            DeleteFlag =
-                reader["DELFLAG"]?.ToString()?.Trim()
-                ?? string.Empty
-        };
-    }
+        CancellationToken cancellationToken = default);
 }
