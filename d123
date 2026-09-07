@@ -1,5 +1,17 @@
 namespace PCPM.Application.D158500;
 
+public interface ID158500Service
+{
+    Task<D158500Result> ProcessAsync(
+        D158500Request request,
+        CancellationToken cancellationToken = default);
+}
+
+
+
+
+namespace PCPM.Application.D158500;
+
 public sealed class D158500Request
 {
     public string Action { get; set; } = string.Empty;
