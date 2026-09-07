@@ -1,51 +1,433 @@
-private async Task<D158500JobRecord?> LoadJobRecordAsync(
-    string jobNumber,
-    CancellationToken cancellationToken = default)
-{
-    const string sql = """
-        SELECT TOP 1
-            JOBNO,
-            STATUS,
-            DELFLAG
-        FROM dbo.YOUR_JOB_TABLE
-        WHERE JOBNO >= @JobNumber
-          AND STATUS = '01'
-          AND ISNULL(DELFLAG, '') = ''
-        ORDER BY JOBNO ASC
-        """;
-
-    await using var connection =
-        new SqlConnection(_connectionString);
-
-    await connection.OpenAsync(cancellationToken);
-
-    await using var command =
-        new SqlCommand(sql, connection);
-
-    command.Parameters.AddWithValue(
-        "@JobNumber",
-        jobNumber);
-
-    await using var reader =
-        await command.ExecuteReaderAsync(cancellationToken);
-
-    if (!await reader.ReadAsync(cancellationToken))
-    {
-        return null;
-    }
-
-    return new D158500JobRecord
-    {
-        JobNumber =
-            reader["JOBNO"]?.ToString()?.Trim()
-            ?? string.Empty,
-
-        Status =
-            reader["STATUS"]?.ToString()?.Trim()
-            ?? string.Empty,
-
-        DelFlag =
-            reader["DELFLAG"]?.ToString()?.Trim()
-            ?? string.Empty
-    };
+@page
+@model PCPM.Pages.D158500Model
+@{
+    Layout = null;
 }
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>PCPM - Functional Area Status</title>
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            background: #f3f1dc;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+            color: #303030;
+            overflow: hidden;
+        }
+
+        .pcpm-screen {
+            position: relative;
+            width: 1180px;
+            height: 720px;
+            margin: 0 auto;
+            padding-top: 18px;
+            box-sizing: border-box;
+        }
+
+        .screen-title {
+            text-align: center;
+            line-height: 1.15;
+            font-weight: normal;
+        }
+
+        .screen-title div {
+            margin: 0;
+            padding: 0;
+        }
+
+        .top-fields {
+            display: grid;
+            grid-template-columns:
+                95px 175px
+                35px 55px
+                40px 75px;
+            align-items: center;
+            column-gap: 8px;
+
+            margin-top: 18px;
+            margin-left: 35px;
+        }
+
+        .terminal-input {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+            height: 19px;
+            border: 0;
+            border-bottom: 1px solid #999;
+            outline: none;
+            background: transparent;
+            padding: 0 2px;
+            box-sizing: border-box;
+        }
+
+        .job-input {
+            width: 155px;
+        }
+
+        .fa-input {
+            width: 38px;
+            border: 1px solid #999;
+            background: rgba(255,255,255,.18);
+        }
+
+        .seq-input {
+            width: 60px;
+        }
+
+        .status-grid {
+            margin-top: 18px;
+            margin-left: 35px;
+            width: 1090px;
+        }
+
+        .status-header,
+        .status-row {
+            display: grid;
+
+            grid-template-columns:
+                42px
+                65px
+                275px
+                120px
+                120px
+                55px
+                120px
+                100px;
+
+            column-gap: 8px;
+            align-items: center;
+        }
+
+        .status-header {
+            height: 24px;
+            white-space: nowrap;
+        }
+
+        .status-row {
+            height: 31px;
+        }
+
+        .selection-input {
+            width: 22px;
+            height: 18px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+            text-transform: uppercase;
+            border: 0;
+            border-bottom: 1px solid #aaa;
+            background: transparent;
+            outline: none;
+            padding: 0;
+            text-align: center;
+        }
+
+        .readonly-value {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: clip;
+        }
+
+        .remarks-area {
+            position: absolute;
+            left: 35px;
+            bottom: 105px;
+            line-height: 1.8;
+        }
+
+        .remark-line {
+            display: grid;
+            grid-template-columns: 115px 600px;
+        }
+
+        .error-message {
+            position: absolute;
+            left: 35px;
+            bottom: 70px;
+            width: 1000px;
+            min-height: 18px;
+            font-weight: bold;
+        }
+
+        .function-keys {
+            position: absolute;
+            left: 120px;
+            bottom: 22px;
+            display: flex;
+            gap: 65px;
+            white-space: nowrap;
+        }
+
+        button.hidden-submit {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        input[readonly] {
+            cursor: default;
+        }
+    </style>
+</head>
+
+<body>
+
+<form method="post" id="pcpmForm">
+
+    <div class="pcpm-screen">
+
+        <!-- ========================================================= -->
+        <!-- TITLE                                                     -->
+        <!-- ========================================================= -->
+
+        <div class="screen-title">
+            <div>PRE-CONSTRUCTION PROJECT MONITORING SYSTEM</div>
+            <div>FUNCTIONAL AREA STATUS</div>
+        </div>
+
+
+        <!-- ========================================================= -->
+        <!-- JOB / FA / SEQUENCE                                       -->
+        <!-- ========================================================= -->
+
+        <div class="top-fields">
+
+            <span>JOB NUMBER:</span>
+
+            <input asp-for="JobNumber"
+                   class="terminal-input job-input"
+                   autocomplete="off" />
+
+            <span>FA:</span>
+
+            <input asp-for="FA"
+                   class="terminal-input fa-input"
+                   autocomplete="off" />
+
+            <span>SEQ:</span>
+
+            <input asp-for="JobSequence"
+                   class="terminal-input seq-input"
+                   autocomplete="off" />
+
+        </div>
+
+
+        <!-- ========================================================= -->
+        <!-- FUNCTIONAL AREA GRID                                      -->
+        <!-- ========================================================= -->
+
+        <div class="status-grid">
+
+            <div class="status-header">
+                <span>SEL</span>
+                <span>FA</span>
+                <span>FUNCTIONAL AREA DESCRIPTION</span>
+                <span>START DATE</span>
+                <span>PROJ END</span>
+                <span>%</span>
+                <span>FA END</span>
+                <span>STATUS</span>
+            </div>
+
+
+            @for (var i = 0; i < Model.Rows.Count; i++)
+            {
+                <div class="status-row">
+
+                    <!-- Needed so collection posts correctly -->
+                    <input type="hidden"
+                           asp-for="Rows[i].RowNumber" />
+
+                    <input type="hidden"
+                           asp-for="Rows[i].FunctionalArea" />
+
+                    <!-- SEL -->
+                    <input asp-for="Rows[i].Selection"
+                           class="selection-input"
+                           maxlength="1"
+                           autocomplete="off" />
+
+                    <!-- FA -->
+                    <span class="readonly-value">
+                        @Model.Rows[i].FunctionalArea
+                    </span>
+
+                    <!-- DESCRIPTION -->
+                    <span class="readonly-value">
+                        @Model.Rows[i].FunctionalAreaDescription
+                    </span>
+
+                    <!-- START DATE -->
+                    <span class="readonly-value">
+                        @Model.Rows[i].StartDate
+                    </span>
+
+                    <!-- PROJECTED END -->
+                    <span class="readonly-value">
+                        @Model.Rows[i].ProjectedEndDate
+                    </span>
+
+                    <!-- PERCENT -->
+                    <span class="readonly-value">
+                        @Model.Rows[i].PercentComplete
+                    </span>
+
+                    <!-- FA END -->
+                    <span class="readonly-value">
+                        @Model.Rows[i].FaEndDate
+                    </span>
+
+                    <!-- STATUS -->
+                    <span class="readonly-value">
+                        @Model.Rows[i].Status
+                    </span>
+
+                </div>
+            }
+
+        </div>
+
+
+        <!-- ========================================================= -->
+        <!-- LAST REMARK / LAST UPDATED                                -->
+        <!-- ========================================================= -->
+
+        <div class="remarks-area">
+
+            <div class="remark-line">
+                <span>LAST REMARK:</span>
+                <span>@Model.Remark</span>
+            </div>
+
+            <div class="remark-line">
+                <span>LAST UPDATED:</span>
+                <span>@Model.LastUpdated</span>
+            </div>
+
+        </div>
+
+
+        <!-- ========================================================= -->
+        <!-- ERROR MESSAGE                                             -->
+        <!-- ========================================================= -->
+
+        <div class="error-message">
+            @Model.ErrorMessage
+        </div>
+
+
+        <!-- ========================================================= -->
+        <!-- FUNCTION KEY LEGEND                                       -->
+        <!-- ========================================================= -->
+
+        <div class="function-keys">
+            <span>F1=HELP</span>
+            <span>F3=BACK</span>
+            <span>ENTER=PROCESS</span>
+        </div>
+
+
+        <!-- Hidden handler controls -->
+        <button type="submit"
+                id="mainSubmit"
+                class="hidden-submit">
+        </button>
+
+        <button type="submit"
+                id="helpSubmit"
+                asp-page-handler="Help"
+                class="hidden-submit">
+        </button>
+
+        <button type="submit"
+                id="backSubmit"
+                asp-page-handler="Previous"
+                class="hidden-submit">
+        </button>
+
+    </div>
+
+</form>
+
+
+<script>
+    const pcpmForm = document.getElementById("pcpmForm");
+
+    document.addEventListener("keydown", function (event) {
+
+        /*
+         * ENTER
+         * Normal D158500 processing
+         */
+        if (event.key === "Enter") {
+            event.preventDefault();
+
+            document
+                .getElementById("mainSubmit")
+                .click();
+
+            return;
+        }
+
+
+        /*
+         * F1
+         * HELP
+         */
+        if (event.key === "F1") {
+            event.preventDefault();
+
+            document
+                .getElementById("helpSubmit")
+                .click();
+
+            return;
+        }
+
+
+        /*
+         * F3
+         * BACK
+         */
+        if (event.key === "F3") {
+            event.preventDefault();
+
+            document
+                .getElementById("backSubmit")
+                .click();
+
+            return;
+        }
+    });
+
+
+    /*
+     * Legacy screen behavior:
+     * automatically uppercase selection fields.
+     */
+    document.querySelectorAll(".selection-input")
+        .forEach(function (input) {
+
+            input.addEventListener("input", function () {
+                this.value = this.value.toUpperCase();
+            });
+
+        });
+</script>
+
+</body>
+</html>
