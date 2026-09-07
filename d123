@@ -1,37 +1,8 @@
-public async Task<D158500ScreenModel?> LoadJobSummaryAsync(
-    string jobNumber,
-    CancellationToken cancellationToken = default)
-{
-    return await _repository.LoadJobSummaryAsync(
-        jobNumber,
-        cancellationToken);
-}
-
-public async Task<string?> GetPreviousJobNumberAsync(
-    string currentJobNumber,
-    CancellationToken cancellationToken = default)
-{
-    return await _repository.GetPreviousJobNumberAsync(
-        currentJobNumber,
-        cancellationToken);
-}
-
-public async Task<string?> GetNextJobNumberAsync(
-    string currentJobNumber,
-    CancellationToken cancellationToken = default)
-{
-    return await _repository.GetNextJobNumberAsync(
-        currentJobNumber,
-        cancellationToken);
-}
-
-
-
 namespace PCPM.Application.D158500;
 
 public interface ID158500Repository
 {
-    Task<D158500ScreenModel?> LoadJobSummaryAsync(
+    Task<D158500Result> LoadJobSummaryAsync(
         string jobNumber,
         CancellationToken cancellationToken = default);
 
@@ -43,3 +14,5 @@ public interface ID158500Repository
         string currentJobNumber,
         CancellationToken cancellationToken = default);
 }
+
+
