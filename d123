@@ -1,42 +1,51 @@
-public async Task<D158500Result> LoadJobSummaryAsync(
+private async Task<D158500JobRecord?> LoadJobRecordAsync(
     string jobNumber,
     CancellationToken cancellationToken = default)
 {
-    var jobRecord = await LoadJobRecordAsync(
-        jobNumber,
-        cancellationToken);
+    const string sql = """
+        SELECT TOP 1
+            JOBNO,
+            STATUS,
+            DELFLAG
+        FROM dbo.YOUR_JOB_TABLE
+        WHERE JOBNO >= @JobNumber
+          AND STATUS = '01'
+          AND ISNULL(DELFLAG, '') = ''
+        ORDER BY JOBNO ASC
+        """;
 
-    if (jobRecord == null)
+    await using var connection =
+        new SqlConnection(_connectionString);
+
+    await connection.OpenAsync(cancellationToken);
+
+    await using var command =
+        new SqlCommand(sql, connection);
+
+    command.Parameters.AddWithValue(
+        "@JobNumber",
+        jobNumber);
+
+    await using var reader =
+        await command.ExecuteReaderAsync(cancellationToken);
+
+    if (!await reader.ReadAsync(cancellationToken))
     {
-        return D158500Result.Fail("NO RECORDS FOUND AT ALL");
+        return null;
     }
 
-    var result = D158500Result.Ok(
-        nextScreen: "D158500",
-        jobNumber: jobRecord.JobNumber);
+    return new D158500JobRecord
+    {
+        JobNumber =
+            reader["JOBNO"]?.ToString()?.Trim()
+            ?? string.Empty,
 
-    result.Rows = new List<D158500StatusRow>();
+        Status =
+            reader["STATUS"]?.ToString()?.Trim()
+            ?? string.Empty,
 
-    // Later we will populate:
-    // result.Rows
-    // result.Remark
-    // result.LastUpdated
-
-    return result;
-}
-
-public Task<string?> GetPreviousJobNumberAsync(
-    string currentJobNumber,
-    CancellationToken cancellationToken = default)
-{
-    // Temporary until we add the real SQL
-    return Task.FromResult<string?>(null);
-}
-
-public Task<string?> GetNextJobNumberAsync(
-    string currentJobNumber,
-    CancellationToken cancellationToken = default)
-{
-    // Temporary until we add the real SQL
-    return Task.FromResult<string?>(null);
+        DelFlag =
+            reader["DELFLAG"]?.ToString()?.Trim()
+            ?? string.Empty
+    };
 }
