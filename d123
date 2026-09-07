@@ -1,664 +1,247 @@
-@page
-@model PCPM.Pages.D158000Model
+namespace PCPM.Application.D158000;
 
-@{
-    Layout = null;
-    ViewData["Title"] = "D158000";
-}
-
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <title>D158000 - PCPM</title>
-
-    <style>
-        body {
-            margin: 0;
-            padding: 30px;
-            background-color: white;
-            color: #222;
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-        }
-
-        .pcpm-screen {
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-
-        .header-grid {
-            display: grid;
-            grid-template-columns: 220px 1fr 180px;
-            align-items: start;
-            gap: 15px;
-        }
-
-        .header-center {
-            text-align: center;
-            font-weight: bold;
-            line-height: 1.8;
-        }
-
-        .header-right {
-            text-align: right;
-        }
-
-        .screen-row {
-            margin-top: 5px;
-        }
-
-        .separator {
-            border-top: 2px solid #555;
-            margin: 15px 0 20px 0;
-        }
-
-        .input-row {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            margin-bottom: 28px;
-            flex-wrap: wrap;
-        }
-
-        .field-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        input[type="text"] {
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            padding: 4px 6px;
-            border: 1px solid #777;
-            text-transform: uppercase;
-        }
-
-        .job-number {
-            width: 120px;
-        }
-
-        .fa {
-            width: 35px;
-        }
-
-        .job-seq {
-            width: 35px;
-        }
-
-        .action {
-            width: 45px;
-        }
-
-        .menu-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-
-        .menu-table th {
-            text-align: left;
-            padding: 8px 6px 16px 6px;
-        }
-
-        .menu-table td {
-            padding: 11px 6px;
-            vertical-align: middle;
-        }
-
-        .selection-box {
-            width: 28px;
-            text-align: center;
-            text-transform: uppercase;
-        }
-
-        .select-column {
-            width: 100px;
-        }
-
-        .option-column {
-            width: 100px;
-        }
-
-        .panel-column {
-            width: 140px;
-        }
-
-        .instruction {
-            margin-top: 25px;
-            text-align: center;
-            font-weight: bold;
-        }
-
-        .function-keys {
-            margin-top: 15px;
-            padding-top: 12px;
-            border-top: 2px solid #555;
-            display: flex;
-            gap: 25px;
-        }
-
-        .function-button {
-            background: none;
-            border: none;
-            padding: 0;
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            cursor: pointer;
-            text-decoration: underline;
-        }
-
-        .submit-row {
-            margin-top: 25px;
-            text-align: center;
-        }
-
-        .submit-button {
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            padding: 8px 28px;
-            cursor: pointer;
-        }
-
-        .message {
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid #b00020;
-            color: #b00020;
-            font-weight: bold;
-        }
-
-        .validation-message {
-            color: #b00020;
-            margin-top: 15px;
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="pcpm-screen">
-
-    <form method="post">
-
-        <!-- Header -->
-        <div class="header-grid">
-
-            <div>
-                <div class="field-group">
-                    <label asp-for="Action">ACTION</label>
-                    <input asp-for="Action"
-                           class="action"
-                           maxlength="3"
-                           autocomplete="off" />
-                </div>
-
-                <div class="screen-row">
-                    SCREEN&nbsp;&nbsp;000
-                </div>
-            </div>
-
-            <div class="header-center">
-                <div>ARDOT PRE-CONSTRUCTION PROJECT MONITORING</div>
-                <div>MAIN MENU</div>
-            </div>
-
-            <div class="header-right">
-                <div>D158000</div>
-                <div>@Model.DisplayDate</div>
-            </div>
-
-        </div>
-
-        <div class="separator"></div>
-
-        <!-- Job Information -->
-        <div class="input-row">
-
-            <div class="field-group">
-                <label asp-for="JobNumber">JOB NUMBER</label>
-
-                <input asp-for="JobNumber"
-                       class="job-number"
-                       maxlength="10"
-                       autocomplete="off" />
-            </div>
-
-            <div class="field-group">
-                <label asp-for="FA">FA</label>
-
-                <input asp-for="FA"
-                       class="fa"
-                       maxlength="2"
-                       autocomplete="off" />
-            </div>
-
-            <div class="field-group">
-                <label asp-for="JobSequence">JOB SEQ</label>
-
-                <input asp-for="JobSequence"
-                       class="job-seq"
-                       maxlength="2"
-                       autocomplete="off" />
-            </div>
-
-        </div>
-
-        <!-- Main Menu -->
-        <table class="menu-table">
-
-            <thead>
-            <tr>
-                <th class="select-column">SELECT</th>
-                <th class="option-column">OPTION</th>
-                <th>TITLE</th>
-                <th class="panel-column">PANEL NO.</th>
-            </tr>
-            </thead>
-
-            <tbody>
-
-            <tr>
-                <td>
-                    <input asp-for="Selection1"
-                           class="selection-box"
-                           maxlength="1"
-                           autocomplete="off" />
-                </td>
-
-                <td>1.</td>
-                <td>JOB STATUS SUMMARY</td>
-                <td>500</td>
-            </tr>
-
-            <tr>
-                <td>
-                    <input asp-for="Selection2"
-                           class="selection-box"
-                           maxlength="1"
-                           autocomplete="off" />
-                </td>
-
-                <td>2.</td>
-                <td>JOB MAINTENANCE MENU</td>
-                <td>100</td>
-            </tr>
-
-            <tr>
-                <td>
-                    <input asp-for="Selection3"
-                           class="selection-box"
-                           maxlength="1"
-                           autocomplete="off" />
-                </td>
-
-                <td>3.</td>
-                <td>JOB BROWSE SELECTION MENU</td>
-                <td>700</td>
-            </tr>
-
-            <tr>
-                <td>
-                    <input asp-for="Selection4"
-                           class="selection-box"
-                           maxlength="1"
-                           autocomplete="off" />
-                </td>
-
-                <td>4.</td>
-                <td>CONSTRUCTION MAINTENANCE MENU</td>
-                <td>900</td>
-            </tr>
-
-            <tr>
-                <td>
-                    <input asp-for="Selection5"
-                           class="selection-box"
-                           maxlength="1"
-                           autocomplete="off" />
-                </td>
-
-                <td>5.</td>
-                <td>SECURITY MAINTENANCE SCREEN</td>
-                <td>010</td>
-            </tr>
-
-            <tr>
-                <td>
-                    <input asp-for="Selection6"
-                           class="selection-box"
-                           maxlength="1"
-                           autocomplete="off" />
-                </td>
-
-                <td>6.</td>
-                <td>STANDARD REMARK MAINTENANCE</td>
-                <td>800</td>
-            </tr>
-
-            </tbody>
-
-        </table>
-
-        <div class="instruction">
-            ENTER 'S' IN THE SELECTION FIELD, PRESS [ENTER]
-        </div>
-
-        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-        {
-            <div class="message">
-                @Model.ErrorMessage
-            </div>
-        }
-
-        <div asp-validation-summary="ModelOnly"
-             class="validation-message">
-        </div>
-
-        <div class="submit-row">
-            <button type="submit"
-                    class="submit-button">
-                ENTER
-            </button>
-        </div>
-
-        <div class="function-keys">
-
-            <button type="submit"
-                    asp-page-handler="Help"
-                    class="function-button">
-                F1=HELP
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="Previous"
-                    class="function-button">
-                F3=PREVIOUS
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="Reset"
-                    class="function-button">
-                F6=RESET
-            </button>
-
-        </div>
-
-    </form>
-
-</div>
-
-<script>
-    // Keep behavior similar to the legacy screen:
-    // convert typed values to uppercase.
-    document.addEventListener("input", function (event) {
-        if (event.target.tagName === "INPUT" &&
-            event.target.type === "text") {
-
-            event.target.value =
-                event.target.value.toUpperCase();
-        }
-    });
-
-    // Allow the physical F1/F3/F6 keys to invoke
-    // the same operations later.
-    document.addEventListener("keydown", function (event) {
-
-        if (event.key === "F1") {
-            event.preventDefault();
-
-            document.querySelector(
-                'button[formaction*="Help"]'
-            )?.click();
-        }
-
-        if (event.key === "F3") {
-            event.preventDefault();
-
-            document.querySelector(
-                'button[formaction*="Previous"]'
-            )?.click();
-        }
-
-        if (event.key === "F6") {
-            event.preventDefault();
-
-            document.querySelector(
-                'button[formaction*="Reset"]'
-            )?.click();
-        }
-    });
-</script>
-
-</body>
-</html>
-
-
-
-
-
-
-
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-
-namespace PCPM.Pages;
-
-public class D158000Model : PageModel
+public sealed class D158000Request
 {
-    [BindProperty]
     public string? Action { get; set; }
 
-    [BindProperty]
     public string? JobNumber { get; set; }
 
-    [BindProperty]
     public string? FA { get; set; }
 
-    [BindProperty]
     public string? JobSequence { get; set; }
 
-    [BindProperty]
     public string? Selection1 { get; set; }
 
-    [BindProperty]
     public string? Selection2 { get; set; }
 
-    [BindProperty]
     public string? Selection3 { get; set; }
 
-    [BindProperty]
     public string? Selection4 { get; set; }
 
-    [BindProperty]
     public string? Selection5 { get; set; }
 
-    [BindProperty]
     public string? Selection6 { get; set; }
+}
+
+
+
+namespace PCPM.Application.D158000;
+
+public sealed class D158000Result
+{
+    public bool Success { get; set; }
 
     public string? ErrorMessage { get; set; }
 
-    public string DisplayDate =>
-        DateTime.Now.ToString("MM/dd/yyyy");
+    public string? NextPanel { get; set; }
 
-    public void OnGet()
-    {
-        //
-        // Later:
-        //
-        // 1. Get logged-in organization user.
-        // 2. Check PCPM security table.
-        // 3. Load/create PCPM session.
-        //
-    }
+    public string? NextScreen { get; set; }
 
-    public IActionResult OnPost()
+    public string? JobNumber { get; set; }
+
+    public string? FA { get; set; }
+
+    public string? JobSequence { get; set; }
+}
+
+
+
+
+namespace PCPM.Application.D158000;
+
+public interface ID158000Service
+{
+    Task<D158000Result> ProcessAsync(
+        D158000Request request,
+        CancellationToken cancellationToken = default);
+}
+
+
+
+
+namespace PCPM.Application.D158000;
+
+public sealed class D158000Service : ID158000Service
+{
+    public Task<D158000Result> ProcessAsync(
+        D158000Request request,
+        CancellationToken cancellationToken = default)
     {
-        NormalizeInput();
+        Normalize(request);
 
         string? nextPanel;
 
         //
-        // ACTION permits direct panel navigation.
+        // If ACTION is entered, treat it as
+        // direct panel navigation.
         //
-        if (!string.IsNullOrWhiteSpace(Action))
+        if (!string.IsNullOrWhiteSpace(request.Action))
         {
-            nextPanel = Action;
+            nextPanel = request.Action;
         }
         else
         {
-            nextPanel = GetSelectedPanel();
+            var selectionResult =
+                GetSelectedPanel(request);
 
-            if (nextPanel is null)
+            if (!selectionResult.Success)
             {
-                return Page();
+                return Task.FromResult(
+                    new D158000Result
+                    {
+                        Success = false,
+                        ErrorMessage =
+                            selectionResult.ErrorMessage
+                    });
             }
+
+            nextPanel = selectionResult.Panel;
         }
 
         //
-        // For now we only validate the destination.
-        //
-        // In the next step this will call:
-        //
-        // ID158000Service.ProcessAsync(...)
+        // Validate the panel.
         //
         if (!IsKnownPanel(nextPanel))
         {
-            ErrorMessage =
-                $"INVALID ACTION CODE: {nextPanel}";
-
-            return Page();
+            return Task.FromResult(
+                new D158000Result
+                {
+                    Success = false,
+                    ErrorMessage =
+                        $"INVALID ACTION CODE: {nextPanel}"
+                });
         }
 
-        //
-        // TEMPORARY:
-        //
-        // Until we create D158500, D158100, etc.,
-        // keep the user on this screen and show what
-        // navigation would occur.
-        //
-        ErrorMessage =
-            $"Navigation accepted. Next screen: D158{nextPanel}";
+        var nextScreen = $"D158{nextPanel}";
 
-        return Page();
+        return Task.FromResult(
+            new D158000Result
+            {
+                Success = true,
 
-        //
-        // Once the destination page exists, this becomes:
-        //
-        // return RedirectToPage($"/D158{nextPanel}");
-        //
+                NextPanel = nextPanel,
+                NextScreen = nextScreen,
+
+                JobNumber = request.JobNumber,
+                FA = request.FA,
+                JobSequence = request.JobSequence
+            });
     }
 
-    public IActionResult OnPostReset()
+    private static void Normalize(
+        D158000Request request)
     {
-        return RedirectToPage("/D158000");
+        request.Action =
+            NormalizeValue(request.Action);
+
+        request.JobNumber =
+            NormalizeValue(request.JobNumber);
+
+        request.FA =
+            NormalizeValue(request.FA);
+
+        request.JobSequence =
+            NormalizeValue(request.JobSequence);
+
+        request.Selection1 =
+            NormalizeValue(request.Selection1);
+
+        request.Selection2 =
+            NormalizeValue(request.Selection2);
+
+        request.Selection3 =
+            NormalizeValue(request.Selection3);
+
+        request.Selection4 =
+            NormalizeValue(request.Selection4);
+
+        request.Selection5 =
+            NormalizeValue(request.Selection5);
+
+        request.Selection6 =
+            NormalizeValue(request.Selection6);
     }
 
-    public IActionResult OnPostPrevious()
-    {
-        //
-        // D158000 is currently the first PCPM page,
-        // so there is no previous screen yet.
-        //
-        ErrorMessage = "NO PREVIOUS SCREEN.";
-
-        return Page();
-    }
-
-    public IActionResult OnPostHelp()
-    {
-        ErrorMessage =
-            "ENTER 'S' NEXT TO ONE MENU OPTION AND PRESS ENTER.";
-
-        return Page();
-    }
-
-    private void NormalizeInput()
-    {
-        Action = Normalize(Action);
-        JobNumber = Normalize(JobNumber);
-        FA = Normalize(FA);
-        JobSequence = Normalize(JobSequence);
-
-        Selection1 = Normalize(Selection1);
-        Selection2 = Normalize(Selection2);
-        Selection3 = Normalize(Selection3);
-        Selection4 = Normalize(Selection4);
-        Selection5 = Normalize(Selection5);
-        Selection6 = Normalize(Selection6);
-    }
-
-    private static string? Normalize(string? value)
+    private static string? NormalizeValue(
+        string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return null;
         }
 
-        return value.Trim().ToUpperInvariant();
+        return value
+            .Trim()
+            .ToUpperInvariant();
     }
 
-    private string? GetSelectedPanel()
+    private static SelectionResult GetSelectedPanel(
+        D158000Request request)
     {
-        var selections = new List<(string? Value, string Panel)>
-        {
-            (Selection1, "500"),
-            (Selection2, "100"),
-            (Selection3, "700"),
-            (Selection4, "900"),
-            (Selection5, "010"),
-            (Selection6, "800")
-        };
+        var selections =
+            new List<(string? Value, string Panel)>
+            {
+                (request.Selection1, "500"),
+                (request.Selection2, "100"),
+                (request.Selection3, "700"),
+                (request.Selection4, "900"),
+                (request.Selection5, "010"),
+                (request.Selection6, "800")
+            };
 
         var enteredSelections =
             selections
-                .Where(x => !string.IsNullOrWhiteSpace(x.Value))
+                .Where(x =>
+                    !string.IsNullOrWhiteSpace(
+                        x.Value))
                 .ToList();
 
         if (enteredSelections.Count == 0)
         {
-            ErrorMessage =
-                "ENTER 'S' IN ONE SELECTION FIELD.";
-
-            return null;
+            return new SelectionResult
+            {
+                Success = false,
+                ErrorMessage =
+                    "ENTER 'S' IN ONE SELECTION FIELD."
+            };
         }
 
         if (enteredSelections.Count > 1)
         {
-            ErrorMessage =
-                "SELECT ONLY ONE OPTION.";
-
-            return null;
+            return new SelectionResult
+            {
+                Success = false,
+                ErrorMessage =
+                    "SELECT ONLY ONE OPTION."
+            };
         }
 
-        var selection = enteredSelections[0];
+        var selection =
+            enteredSelections[0];
 
         if (!string.Equals(
                 selection.Value,
                 "S",
                 StringComparison.OrdinalIgnoreCase))
         {
-            ErrorMessage =
-                "INVALID SELECTION. ENTER 'S'.";
-
-            return null;
+            return new SelectionResult
+            {
+                Success = false,
+                ErrorMessage =
+                    "INVALID SELECTION. ENTER 'S'."
+            };
         }
 
-        return selection.Panel;
+        return new SelectionResult
+        {
+            Success = true,
+            Panel = selection.Panel
+        };
     }
 
-    private static bool IsKnownPanel(string panel)
+    private static bool IsKnownPanel(
+        string? panel)
     {
-        //
-        // This list comes from the P158000
-        // VAL-ACTION-NAV logic.
-        //
-        // For this first implementation we're including
-        // the six D158000 menu destinations.
-        //
         return panel is
             "010" or
             "100" or
@@ -667,7 +250,14 @@ public class D158000Model : PageModel
             "800" or
             "900";
     }
+
+    private sealed class SelectionResult
+    {
+        public bool Success { get; set; }
+
+        public string? Panel { get; set; }
+
+        public string? ErrorMessage { get; set; }
+    }
 }
-
-
 
