@@ -1,20 +1,424 @@
-public class D158500StatusRow
+namespace PCPM.Application.D158500;
+
+public sealed class D158500Request
+{
+    public string Action { get; set; } = string.Empty;
+
+    public string JobNumber { get; set; } = string.Empty;
+
+    public string SF { get; set; } = string.Empty;
+
+    public string SelRem { get; set; } = string.Empty;
+
+    public string? CurrentJobNumber { get; set; }
+
+    public List<D158500SelectionRequest> Rows { get; set; } = new();
+}
+
+public sealed class D158500SelectionRequest
 {
     public int RowNumber { get; set; }
 
     public string Selection { get; set; } = string.Empty;
 
     public string FunctionalArea { get; set; } = string.Empty;
-
-    public string FunctionalAreaDescription { get; set; } = string.Empty;
-
-    public string StartDate { get; set; } = string.Empty;
-
-    public string ProjectedEndDate { get; set; } = string.Empty;
-
-    public string PercentComplete { get; set; } = string.Empty;
-
-    public string EndDate { get; set; } = string.Empty;
-
-    public string Status { get; set; } = string.Empty;
 }
+
+
+
+
+
+namespace PCPM.Application.D158500;
+
+public sealed class D158500Result
+{
+    public bool Success { get; set; }
+
+    public string? NextScreen { get; set; }
+
+    public string ErrorMessage { get; set; } = string.Empty;
+
+    public string JobNumber { get; set; } = string.Empty;
+
+    public string FunctionalArea { get; set; } = string.Empty;
+
+    public string JobSequence { get; set; } = string.Empty;
+
+    public bool JobChanged { get; set; }
+
+    public static D158500Result Ok(
+        string nextScreen,
+        string jobNumber = "",
+        string functionalArea = "",
+        string jobSequence = "",
+        bool jobChanged = false)
+    {
+        return new D158500Result
+        {
+            Success = true,
+            NextScreen = nextScreen,
+            JobNumber = jobNumber,
+            FunctionalArea = functionalArea,
+            JobSequence = jobSequence,
+            JobChanged = jobChanged
+        };
+    }
+
+    public static D158500Result Fail(string errorMessage)
+    {
+        return new D158500Result
+        {
+            Success = false,
+            ErrorMessage = errorMessage
+        };
+    }
+}
+
+
+
+namespace PCPM.Application.D158500;
+
+public interface ID158500Service
+{
+    Task<D158500Result> ProcessAsync(
+        D158500Request request,
+        CancellationToken cancellationToken = default);
+}
+
+
+
+
+namespace PCPM.Application.D158500;
+
+public sealed class D158500Service : ID158500Service
+{
+    private static readonly HashSet<string> ValidActionScreens =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "010",
+            "100",
+            "101",
+            "201",
+            "202",
+            "301",
+            "302",
+            "401",
+            "500",
+            "510",
+            "550",
+            "700",
+            "710",
+            "711",
+            "712",
+            "713",
+            "800",
+            "801",
+            "802",
+            "803",
+            "804",
+            "900",
+            "915",
+            "920",
+            "930",
+            "935",
+            "940",
+            "945",
+            "950"
+        };
+
+    public Task<D158500Result> ProcessAsync(
+        D158500Request request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (request is null)
+        {
+            return Task.FromResult(
+                D158500Result.Fail("Invalid D158500 request."));
+        }
+
+        Normalize(request);
+
+        // ------------------------------------------------------------
+        // COBOL CHECK-CONFLICT equivalent
+        // Only one navigation method may be entered.
+        // ------------------------------------------------------------
+
+        var navigationCount = 0;
+
+        var actionEntered =
+            !string.IsNullOrWhiteSpace(request.Action);
+
+        var sfEntered =
+            !string.IsNullOrWhiteSpace(request.SF);
+
+        var remarkEntered =
+            !string.IsNullOrWhiteSpace(request.SelRem);
+
+        var selectedRows =
+            request.Rows
+                .Where(x => !string.IsNullOrWhiteSpace(x.Selection))
+                .ToList();
+
+        if (actionEntered)
+        {
+            navigationCount++;
+        }
+
+        if (sfEntered)
+        {
+            navigationCount++;
+        }
+
+        if (remarkEntered)
+        {
+            navigationCount++;
+        }
+
+        navigationCount += selectedRows.Count;
+
+        if (navigationCount > 1)
+        {
+            return Task.FromResult(
+                D158500Result.Fail(
+                    "NAVIGATION CONFLICT - enter only one action or selection."));
+        }
+
+        // ------------------------------------------------------------
+        // ACTION field
+        //
+        // COBOL:
+        // IF ACTION = 'SO' OR numeric -> valid
+        // ------------------------------------------------------------
+
+        if (actionEntered)
+        {
+            return Task.FromResult(
+                ProcessAction(request));
+        }
+
+        // ------------------------------------------------------------
+        // SF selection
+        //
+        // COBOL SELECT-RECORD:
+        // WHEN D158500.SF = 'S'
+        //     SET W-NEXT = '510'
+        // ------------------------------------------------------------
+
+        if (sfEntered)
+        {
+            if (!request.SF.Equals(
+                    "S",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(
+                    D158500Result.Fail(
+                        "INVALID SELECTION CODE."));
+            }
+
+            return Task.FromResult(
+                D158500Result.Ok(
+                    nextScreen: "D158510",
+                    jobNumber: request.JobNumber));
+        }
+
+        // ------------------------------------------------------------
+        // Remark selection
+        //
+        // COBOL:
+        // WHEN D158500.SELREM = 'S'
+        //     SET W-NEXT = '550'
+        // ------------------------------------------------------------
+
+        if (remarkEntered)
+        {
+            if (!request.SelRem.Equals(
+                    "S",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(
+                    D158500Result.Fail(
+                        "INVALID SELECTION CODE."));
+            }
+
+            return Task.FromResult(
+                D158500Result.Ok(
+                    nextScreen: "D158550",
+                    jobNumber: request.JobNumber));
+        }
+
+        // ------------------------------------------------------------
+        // Functional-area/status row selected
+        // ------------------------------------------------------------
+
+        if (selectedRows.Count == 1)
+        {
+            return Task.FromResult(
+                ProcessSelectedRow(
+                    request,
+                    selectedRows[0]));
+        }
+
+        // ------------------------------------------------------------
+        // No ACTION and no selection.
+        //
+        // COBOL NAVIGATION-PREP:
+        //
+        // IF NEW-JOBNO
+        //     SET W-NEXT = '500'
+        //
+        // This effectively reloads D158500 using the newly entered job.
+        // ------------------------------------------------------------
+
+        var jobChanged =
+            !string.IsNullOrWhiteSpace(request.JobNumber) &&
+            !string.Equals(
+                request.JobNumber,
+                request.CurrentJobNumber,
+                StringComparison.OrdinalIgnoreCase);
+
+        if (jobChanged)
+        {
+            return Task.FromResult(
+                D158500Result.Ok(
+                    nextScreen: "D158500",
+                    jobNumber: request.JobNumber,
+                    jobChanged: true));
+        }
+
+        // ------------------------------------------------------------
+        // Nothing was entered.
+        // ------------------------------------------------------------
+
+        return Task.FromResult(
+            D158500Result.Fail(
+                "SELECTION NOT SPECIFIED."));
+    }
+
+    private static D158500Result ProcessAction(
+        D158500Request request)
+    {
+        var action = request.Action.Trim().ToUpperInvariant();
+
+        // Existing COBOL explicitly permits SO.
+        if (action == "SO")
+        {
+            return D158500Result.Ok(
+                nextScreen: "SO",
+                jobNumber: request.JobNumber);
+        }
+
+        // COBOL validates numeric action values.
+        if (!action.All(char.IsDigit))
+        {
+            return D158500Result.Fail(
+                "INVALID ACTION CODE.");
+        }
+
+        action = action.PadLeft(3, '0');
+
+        if (!ValidActionScreens.Contains(action))
+        {
+            return D158500Result.Fail(
+                "INVALID ACTION CODE.");
+        }
+
+        return D158500Result.Ok(
+            nextScreen: $"D158{action}",
+            jobNumber: request.JobNumber);
+    }
+
+    private static D158500Result ProcessSelectedRow(
+        D158500Request request,
+        D158500SelectionRequest row)
+    {
+        var selection =
+            row.Selection.Trim().ToUpperInvariant();
+
+        var functionalArea =
+            row.FunctionalArea.Trim().ToUpperInvariant();
+
+        if (string.IsNullOrWhiteSpace(functionalArea))
+        {
+            return D158500Result.Fail(
+                "Functional area is missing for the selected row.");
+        }
+
+        // COBOL LOAD-SCREEN-ID:
+        //
+        // WHEN SELECT(I) = 'S' OR 'I'
+        //     SET W-FA   = FUNC-AREA(I)
+        //     SET W-NEXT = '302'
+        //
+        // WHEN SELECT(I) = 'U'
+        //     SET W-FA   = FUNC-AREA(I)
+        //     SET W-NEXT = '202'
+
+        switch (selection)
+        {
+            case "S":
+            case "I":
+                return D158500Result.Ok(
+                    nextScreen: "D158302",
+                    jobNumber: request.JobNumber,
+                    functionalArea: functionalArea);
+
+            case "U":
+                return D158500Result.Ok(
+                    nextScreen: "D158202",
+                    jobNumber: request.JobNumber,
+                    functionalArea: functionalArea);
+
+            default:
+                return D158500Result.Fail(
+                    "INVALID SELECTION CODE.");
+        }
+    }
+
+    private static void Normalize(
+        D158500Request request)
+    {
+        request.Action =
+            request.Action?.Trim().ToUpperInvariant()
+            ?? string.Empty;
+
+        request.JobNumber =
+            request.JobNumber?.Trim()
+            ?? string.Empty;
+
+        request.SF =
+            request.SF?.Trim().ToUpperInvariant()
+            ?? string.Empty;
+
+        request.SelRem =
+            request.SelRem?.Trim().ToUpperInvariant()
+            ?? string.Empty;
+
+        request.CurrentJobNumber =
+            request.CurrentJobNumber?.Trim();
+
+        request.Rows ??= new List<D158500SelectionRequest>();
+
+        foreach (var row in request.Rows)
+        {
+            row.Selection =
+                row.Selection?.Trim().ToUpperInvariant()
+                ?? string.Empty;
+
+            row.FunctionalArea =
+                row.FunctionalArea?.Trim().ToUpperInvariant()
+                ?? string.Empty;
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
