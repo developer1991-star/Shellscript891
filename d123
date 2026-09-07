@@ -1,57 +1,379 @@
-<script>
-    const pcpmForm = document.getElementById("pcpmForm");
+namespace PCPM.Application.Security;
 
-    // Legacy PCPM behavior:
-    // Pressing ENTER in any text field performs the normal POST.
-    pcpmForm.addEventListener("keydown", function (event) {
+public interface IPcpmSecurityRepository
+{
+    Task<bool> UserHasPcpmAccessAsync(
+        string userId,
+        CancellationToken cancellationToken = default);
+}
 
-        if (event.key === "Enter" &&
-            event.target.matches('input[type="text"]')) {
 
-            event.preventDefault();
+namespace PCPM.Application.Security;
 
-            // Submit the form WITHOUT a named Razor handler.
-            // This calls OnPostAsync().
-            pcpmForm.requestSubmit();
+public interface IPcpmSecurityService
+{
+    Task<bool> CanAccessPcpmAsync(
+        string userId,
+        CancellationToken cancellationToken = default);
+}
+
+namespace PCPM.Application.Security;
+
+public sealed class PcpmSecurityService
+    : IPcpmSecurityService
+{
+    private readonly IPcpmSecurityRepository _repository;
+
+    public PcpmSecurityService(
+        IPcpmSecurityRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public async Task<bool> CanAccessPcpmAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return false;
         }
+
+        var normalizedUserId =
+            userId.Trim().ToUpperInvariant();
+
+        return await _repository.UserHasPcpmAccessAsync(
+            normalizedUserId,
+            cancellationToken);
+    }
+}
+
+
+using System.Data;
+using Microsoft.Data.SqlClient;
+using PCPM.Application.Security;
+
+namespace PCPM.Infrastructure.Security;
+
+public sealed class PcpmSecurityRepository
+    : IPcpmSecurityRepository
+{
+    private readonly string _connectionString;
+
+    public PcpmSecurityRepository(
+        string connectionString)
+    {
+        _connectionString = connectionString;
+    }
+
+    public async Task<bool> UserHasPcpmAccessAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT CASE
+                WHEN EXISTS
+                (
+                    SELECT 1
+                    FROM dbo.T000_SYSTEM_SEC
+                    WHERE RTRIM(SYSTEM_ID) = @SystemId
+                      AND RTRIM(USERID_R) = @UserId
+                )
+                THEN CAST(1 AS bit)
+                ELSE CAST(0 AS bit)
+            END;
+            """;
+
+        await using var connection =
+            new SqlConnection(_connectionString);
+
+        await connection.OpenAsync(
+            cancellationToken);
+
+        await using var command =
+            new SqlCommand(sql, connection);
+
+        command.Parameters.Add(
+            "@SystemId",
+            SqlDbType.VarChar,
+            10).Value = "PCPM";
+
+        command.Parameters.Add(
+            "@UserId",
+            SqlDbType.VarChar,
+            50).Value = userId;
+
+        var result =
+            await command.ExecuteScalarAsync(
+                cancellationToken);
+
+        return result != null &&
+               Convert.ToBoolean(result);
+    }
+}
+
+
+{
+  "ConnectionStrings": {
+    "PcpmDatabase": "Server=YOUR_SQL_SERVER;Database=YOUR_DATABASE;Integrated Security=True;Encrypt=True;TrustServerCertificate=True;"
+  },
+
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+
+  "AllowedHosts": "*"
+}
+
+
+
+namespace PCPM.Session;
+
+public static class PcpmSessionKeys
+{
+    public const string SessionId =
+        "PCPM.SessionId";
+
+    public const string UserId =
+        "PCPM.UserId";
+
+    public const string CurrentScreen =
+        "PCPM.CurrentScreen";
+
+    public const string PreviousScreen =
+        "PCPM.PreviousScreen";
+
+    public const string JobNumber =
+        "PCPM.JobNumber";
+
+    public const string FunctionalArea =
+        "PCPM.FunctionalArea";
+
+    public const string JobSequence =
+        "PCPM.JobSequence";
+}
+
+
+
+
+
+var builder =
+    WebApplication.CreateBuilder(args);
+
+builder.Services.AddRazorPages();
+
+
+// --------------------------------------------------
+// D158000 application processing
+// --------------------------------------------------
+
+builder.Services.AddScoped<
+    ID158000Service,
+    D158000Service>();
+
+
+// --------------------------------------------------
+// PCPM security
+// --------------------------------------------------
+
+builder.Services.AddScoped<
+    IPcpmSecurityService,
+    PcpmSecurityService>();
+
+builder.Services.AddScoped<
+    IPcpmSecurityRepository>(serviceProvider =>
+    {
+        var connectionString =
+            builder.Configuration
+                .GetConnectionString(
+                    "PcpmDatabase");
+
+        if (string.IsNullOrWhiteSpace(
+                connectionString))
+        {
+            throw new InvalidOperationException(
+                "PCPM database connection string " +
+                "was not configured.");
+        }
+
+        return new PcpmSecurityRepository(
+            connectionString);
     });
 
-    // Convert entered values to uppercase.
-    document.addEventListener("input", function (event) {
 
-        if (event.target.tagName === "INPUT" &&
-            event.target.type === "text") {
+// --------------------------------------------------
+// PCPM session
+// --------------------------------------------------
 
-            event.target.value =
-                event.target.value.toUpperCase();
-        }
-    });
+builder.Services.AddDistributedMemoryCache();
 
-    // Preserve legacy function-key behavior.
-    document.addEventListener("keydown", function (event) {
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout =
+        TimeSpan.FromMinutes(30);
 
-        if (event.key === "F1") {
-            event.preventDefault();
+    options.Cookie.Name =
+        ".PCPM.Session";
 
-            document.querySelector(
-                'button[formaction*="Help"]'
-            )?.click();
-        }
+    options.Cookie.HttpOnly = true;
 
-        if (event.key === "F3") {
-            event.preventDefault();
+    options.Cookie.IsEssential = true;
 
-            document.querySelector(
-                'button[formaction*="Previous"]'
-            )?.click();
-        }
+    options.Cookie.SameSite =
+        SameSiteMode.Lax;
 
-        if (event.key === "F6") {
-            event.preventDefault();
+    options.Cookie.SecurePolicy =
+        CookieSecurePolicy.Always;
+});
 
-            document.querySelector(
-                'button[formaction*="Reset"]'
-            )?.click();
-        }
-    });
-</script>
+
+
+
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using PCPM.Application.D158000;
+using PCPM.Application.Security;
+using PCPM.Session;
+
+private readonly ID158000Service _service;
+private readonly IPcpmSecurityService _securityService;
+
+public D158000Model(
+    ID158000Service service,
+    IPcpmSecurityService securityService)
+{
+    _service = service;
+    _securityService = securityService;
+}
+
+
+
+
+
+public async Task<IActionResult> OnGetAsync()
+{
+    var userId =
+        User.Identity?.Name;
+
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        //
+        // Once organization authentication is configured,
+        // this will send the user through the organization's
+        // login mechanism.
+        //
+        return Challenge();
+    }
+
+    var hasAccess =
+        await _securityService.CanAccessPcpmAsync(
+            userId,
+            HttpContext.RequestAborted);
+
+    if (!hasAccess)
+    {
+        return Forbid();
+    }
+
+    InitializePcpmSession(userId);
+
+    return Page();
+}
+
+
+private void InitializePcpmSession(
+    string userId)
+{
+    var session = HttpContext.Session;
+
+    //
+    // Create our PCPM business/session ID
+    // only once.
+    //
+    if (string.IsNullOrWhiteSpace(
+            session.GetString(
+                PcpmSessionKeys.SessionId)))
+    {
+        session.SetString(
+            PcpmSessionKeys.SessionId,
+            Guid.NewGuid().ToString("N"));
+    }
+
+    session.SetString(
+        PcpmSessionKeys.UserId,
+        userId);
+
+    session.SetString(
+        PcpmSessionKeys.CurrentScreen,
+        "D158000");
+}
+
+
+
+
+
+var result =
+    await _service.ProcessAsync(
+        request);
+
+if (!result.Success)
+{
+    ErrorMessage =
+        result.ErrorMessage;
+
+    return Page();
+}
+
+
+// Save PCPM context
+var session =
+    HttpContext.Session;
+
+session.SetString(
+    PcpmSessionKeys.PreviousScreen,
+    "D158000");
+
+session.SetString(
+    PcpmSessionKeys.CurrentScreen,
+    result.NextScreen!);
+
+if (!string.IsNullOrWhiteSpace(
+        result.JobNumber))
+{
+    session.SetString(
+        PcpmSessionKeys.JobNumber,
+        result.JobNumber);
+}
+
+if (!string.IsNullOrWhiteSpace(
+        result.FA))
+{
+    session.SetString(
+        PcpmSessionKeys.FunctionalArea,
+        result.FA);
+}
+
+if (!string.IsNullOrWhiteSpace(
+        result.JobSequence))
+{
+    session.SetString(
+        PcpmSessionKeys.JobSequence,
+        result.JobSequence);
+}
+
+
+// Navigate
+return RedirectToPage(
+    $"/{result.NextScreen}");
+
+
+
+
+
+
+
+
