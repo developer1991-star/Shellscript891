@@ -1,263 +1,114 @@
-namespace PCPM.Application.D158000;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using PCPM.Application.D158000;
 
-public sealed class D158000Request
+namespace PCPM.Pages;
+
+public class D158000Model : PageModel
 {
+    private readonly ID158000Service _service;
+
+    public D158000Model(ID158000Service service)
+    {
+        _service = service;
+    }
+
+    [BindProperty]
     public string? Action { get; set; }
 
+    [BindProperty]
     public string? JobNumber { get; set; }
 
+    [BindProperty]
     public string? FA { get; set; }
 
+    [BindProperty]
     public string? JobSequence { get; set; }
 
+    [BindProperty]
     public string? Selection1 { get; set; }
 
+    [BindProperty]
     public string? Selection2 { get; set; }
 
+    [BindProperty]
     public string? Selection3 { get; set; }
 
+    [BindProperty]
     public string? Selection4 { get; set; }
 
+    [BindProperty]
     public string? Selection5 { get; set; }
 
+    [BindProperty]
     public string? Selection6 { get; set; }
-}
-
-
-
-namespace PCPM.Application.D158000;
-
-public sealed class D158000Result
-{
-    public bool Success { get; set; }
 
     public string? ErrorMessage { get; set; }
 
-    public string? NextPanel { get; set; }
+    public string DisplayDate =>
+        DateTime.Now.ToString("MM/dd/yyyy");
 
-    public string? NextScreen { get; set; }
-
-    public string? JobNumber { get; set; }
-
-    public string? FA { get; set; }
-
-    public string? JobSequence { get; set; }
-}
-
-
-
-
-namespace PCPM.Application.D158000;
-
-public interface ID158000Service
-{
-    Task<D158000Result> ProcessAsync(
-        D158000Request request,
-        CancellationToken cancellationToken = default);
-}
-
-
-
-
-namespace PCPM.Application.D158000;
-
-public sealed class D158000Service : ID158000Service
-{
-    public Task<D158000Result> ProcessAsync(
-        D158000Request request,
-        CancellationToken cancellationToken = default)
+    public void OnGet()
     {
-        Normalize(request);
-
-        string? nextPanel;
-
-        //
-        // If ACTION is entered, treat it as
-        // direct panel navigation.
-        //
-        if (!string.IsNullOrWhiteSpace(request.Action))
-        {
-            nextPanel = request.Action;
-        }
-        else
-        {
-            var selectionResult =
-                GetSelectedPanel(request);
-
-            if (!selectionResult.Success)
-            {
-                return Task.FromResult(
-                    new D158000Result
-                    {
-                        Success = false,
-                        ErrorMessage =
-                            selectionResult.ErrorMessage
-                    });
-            }
-
-            nextPanel = selectionResult.Panel;
-        }
-
-        //
-        // Validate the panel.
-        //
-        if (!IsKnownPanel(nextPanel))
-        {
-            return Task.FromResult(
-                new D158000Result
-                {
-                    Success = false,
-                    ErrorMessage =
-                        $"INVALID ACTION CODE: {nextPanel}"
-                });
-        }
-
-        var nextScreen = $"D158{nextPanel}";
-
-        return Task.FromResult(
-            new D158000Result
-            {
-                Success = true,
-
-                NextPanel = nextPanel,
-                NextScreen = nextScreen,
-
-                JobNumber = request.JobNumber,
-                FA = request.FA,
-                JobSequence = request.JobSequence
-            });
     }
 
-    private static void Normalize(
-        D158000Request request)
+    // Main ENTER/Submit
+    public async Task<IActionResult> OnPostAsync()
     {
-        request.Action =
-            NormalizeValue(request.Action);
-
-        request.JobNumber =
-            NormalizeValue(request.JobNumber);
-
-        request.FA =
-            NormalizeValue(request.FA);
-
-        request.JobSequence =
-            NormalizeValue(request.JobSequence);
-
-        request.Selection1 =
-            NormalizeValue(request.Selection1);
-
-        request.Selection2 =
-            NormalizeValue(request.Selection2);
-
-        request.Selection3 =
-            NormalizeValue(request.Selection3);
-
-        request.Selection4 =
-            NormalizeValue(request.Selection4);
-
-        request.Selection5 =
-            NormalizeValue(request.Selection5);
-
-        request.Selection6 =
-            NormalizeValue(request.Selection6);
-    }
-
-    private static string? NormalizeValue(
-        string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
+        var request = new D158000Request
         {
-            return null;
-        }
+            Action = Action,
+            JobNumber = JobNumber,
+            FA = FA,
+            JobSequence = JobSequence,
 
-        return value
-            .Trim()
-            .ToUpperInvariant();
-    }
-
-    private static SelectionResult GetSelectedPanel(
-        D158000Request request)
-    {
-        var selections =
-            new List<(string? Value, string Panel)>
-            {
-                (request.Selection1, "500"),
-                (request.Selection2, "100"),
-                (request.Selection3, "700"),
-                (request.Selection4, "900"),
-                (request.Selection5, "010"),
-                (request.Selection6, "800")
-            };
-
-        var enteredSelections =
-            selections
-                .Where(x =>
-                    !string.IsNullOrWhiteSpace(
-                        x.Value))
-                .ToList();
-
-        if (enteredSelections.Count == 0)
-        {
-            return new SelectionResult
-            {
-                Success = false,
-                ErrorMessage =
-                    "ENTER 'S' IN ONE SELECTION FIELD."
-            };
-        }
-
-        if (enteredSelections.Count > 1)
-        {
-            return new SelectionResult
-            {
-                Success = false,
-                ErrorMessage =
-                    "SELECT ONLY ONE OPTION."
-            };
-        }
-
-        var selection =
-            enteredSelections[0];
-
-        if (!string.Equals(
-                selection.Value,
-                "S",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return new SelectionResult
-            {
-                Success = false,
-                ErrorMessage =
-                    "INVALID SELECTION. ENTER 'S'."
-            };
-        }
-
-        return new SelectionResult
-        {
-            Success = true,
-            Panel = selection.Panel
+            Selection1 = Selection1,
+            Selection2 = Selection2,
+            Selection3 = Selection3,
+            Selection4 = Selection4,
+            Selection5 = Selection5,
+            Selection6 = Selection6
         };
+
+        var result =
+            await _service.ProcessAsync(request);
+
+        if (!result.Success)
+        {
+            ErrorMessage = result.ErrorMessage;
+            return Page();
+        }
+
+        // Temporary until destination pages exist
+        ErrorMessage =
+            $"Navigation accepted. Next screen: {result.NextScreen}";
+
+        return Page();
+
+        // Later:
+        // return RedirectToPage($"/{result.NextScreen}");
     }
 
-    private static bool IsKnownPanel(
-        string? panel)
+    // F1
+    public IActionResult OnPostHelp()
     {
-        return panel is
-            "010" or
-            "100" or
-            "500" or
-            "700" or
-            "800" or
-            "900";
+        ErrorMessage =
+            "ENTER 'S' NEXT TO ONE MENU OPTION AND PRESS ENTER.";
+
+        return Page();
     }
 
-    private sealed class SelectionResult
+    // F3
+    public IActionResult OnPostPrevious()
     {
-        public bool Success { get; set; }
+        ErrorMessage = "NO PREVIOUS SCREEN.";
 
-        public string? Panel { get; set; }
+        return Page();
+    }
 
-        public string? ErrorMessage { get; set; }
+    // F6
+    public IActionResult OnPostReset()
+    {
+        return RedirectToPage("/D158000");
     }
 }
-
