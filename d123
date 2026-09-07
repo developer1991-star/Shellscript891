@@ -1,41 +1,347 @@
- public string GetOrCreate(string userId)
+@page
+@model PCPM.Pages.D158500Model
+@{
+    ViewData["Title"] = "D158500";
+    Layout = null;
+}
 
-    {
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>PCPM - Functional Area Status</title>
 
-        var sessionId =
-
-            Session.GetString(PcpmSessionKeys.SessionId);
-
-        if (!string.IsNullOrWhiteSpace(sessionId))
-
-        {
-
-            return sessionId;
-
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100%;
+            background-color: #d7dfc0;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 16px;
+            color: #000;
         }
 
-        Clear();
+        .pcpm-screen {
+            padding: 24px 32px;
+            min-width: 1050px;
+        }
 
-        sessionId = RandomNumberGenerator
+        .screen-title {
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 22px;
+        }
 
-            .GetInt32(1, 1_000_000)
+        .screen-info {
+            display: grid;
+            grid-template-columns: 150px 190px 70px 120px 110px 120px;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 20px;
+        }
 
-            .ToString("D6", CultureInfo.InvariantCulture);
+        .pcpm-label {
+            font-weight: bold;
+            white-space: nowrap;
+        }
 
-        Session.SetString(
+        .pcpm-input {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 16px;
 
-            PcpmSessionKeys.SessionId,
+            /* Same terminal/background appearance */
+            background-color: #d7dfc0;
+            color: #000;
 
-            sessionId);
+            border: none;
+            border-bottom: 1px solid #555;
+            outline: none;
+            padding: 2px 4px;
+            box-sizing: border-box;
+        }
 
-        Session.SetString(
+        .pcpm-input:focus {
+            outline: 1px solid #333;
+        }
 
-            PcpmSessionKeys.UserId,
+        .readonly-field {
+            border-bottom: none;
+        }
 
-            userId);
+        .fa-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 7px;
+        }
 
-        return sessionId;
+        .fa-table th {
+            text-align: left;
+            font-weight: bold;
+            padding: 4px;
+            white-space: nowrap;
+        }
 
-    }
+        .fa-table td {
+            padding: 2px 4px;
+            vertical-align: middle;
+        }
 
- 
+        .select-field {
+            width: 28px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .fa-field {
+            width: 55px;
+            text-transform: uppercase;
+        }
+
+        .description-field {
+            width: 245px;
+        }
+
+        .date-field {
+            width: 105px;
+        }
+
+        .percent-field {
+            width: 60px;
+            text-align: right;
+        }
+
+        .status-field {
+            width: 90px;
+        }
+
+        .footer-section {
+            margin-top: 24px;
+            display: grid;
+            grid-template-columns: 160px 400px;
+            row-gap: 8px;
+        }
+
+        .message {
+            margin-top: 20px;
+            min-height: 24px;
+            font-weight: bold;
+        }
+
+        .error-message {
+            color: #8b0000;
+        }
+
+        .function-keys {
+            margin-top: 28px;
+            white-space: pre;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="pcpm-screen">
+
+        <div class="screen-title">
+            PRE-CONSTRUCTION PROJECT MONITORING SYSTEM
+            <br />
+            FUNCTIONAL AREA STATUS
+        </div>
+
+        <form method="post" id="pcpmForm">
+
+            @*
+                Keep these values with the PCPM session.
+                They can also be displayed if you want them visible.
+            *@
+
+            <div class="screen-info">
+
+                <span class="pcpm-label">JOB NUMBER:</span>
+                <input asp-for="JobNumber"
+                       class="pcpm-input"
+                       maxlength="10" />
+
+                <span class="pcpm-label">FA:</span>
+                <input asp-for="FA"
+                       class="pcpm-input"
+                       maxlength="2"
+                       style="width:50px;" />
+
+                <span class="pcpm-label">SEQ:</span>
+                <input asp-for="JobSequence"
+                       class="pcpm-input"
+                       maxlength="3"
+                       style="width:60px;" />
+            </div>
+
+
+            <table class="fa-table">
+                <thead>
+                    <tr>
+                        <th>SEL</th>
+                        <th>FA</th>
+                        <th>FUNCTIONAL AREA DESCRIPTION</th>
+                        <th>START DATE</th>
+                        <th>PROJ END</th>
+                        <th>%</th>
+                        <th>FA END</th>
+                        <th>STATUS</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @for (int i = 0; i < Model.Rows.Count; i++)
+                    {
+                        <tr>
+                            <td>
+                                <input asp-for="Rows[i].Selection"
+                                       class="pcpm-input select-field"
+                                       maxlength="1"
+                                       autocomplete="off" />
+
+                                <input asp-for="Rows[i].RowNumber"
+                                       type="hidden" />
+                            </td>
+
+                            <td>
+                                <input asp-for="Rows[i].FunctionalArea"
+                                       class="pcpm-input fa-field readonly-field"
+                                       readonly />
+                            </td>
+
+                            <td>
+                                <input asp-for="Rows[i].FunctionalAreaDescription"
+                                       class="pcpm-input description-field readonly-field"
+                                       readonly />
+                            </td>
+
+                            <td>
+                                <input asp-for="Rows[i].StartDate"
+                                       class="pcpm-input date-field readonly-field"
+                                       readonly />
+                            </td>
+
+                            <td>
+                                <input asp-for="Rows[i].ProjectedEndDate"
+                                       class="pcpm-input date-field readonly-field"
+                                       readonly />
+                            </td>
+
+                            <td>
+                                <input asp-for="Rows[i].PercentComplete"
+                                       class="pcpm-input percent-field readonly-field"
+                                       readonly />
+                            </td>
+
+                            <td>
+                                <input asp-for="Rows[i].EndDate"
+                                       class="pcpm-input date-field readonly-field"
+                                       readonly />
+                            </td>
+
+                            <td>
+                                <input asp-for="Rows[i].Status"
+                                       class="pcpm-input status-field readonly-field"
+                                       readonly />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+
+            <div class="footer-section">
+
+                <span class="pcpm-label">LAST REMARK:</span>
+                <input asp-for="LastRemark"
+                       class="pcpm-input readonly-field"
+                       readonly />
+
+                <span class="pcpm-label">LAST UPDATED:</span>
+                <input asp-for="LastUpdated"
+                       class="pcpm-input readonly-field"
+                       readonly />
+            </div>
+
+
+            <div class="message">
+                @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+                {
+                    <span class="error-message">
+                        @Model.ErrorMessage
+                    </span>
+                }
+            </div>
+
+
+            <div class="function-keys">
+F1=HELP     F3=BACK     ENTER=PROCESS
+            </div>
+
+            <!-- Used for keyboard handlers -->
+            <button type="submit"
+                    id="defaultSubmit"
+                    style="display:none;">
+            </button>
+
+            <button type="submit"
+                    asp-page-handler="Help"
+                    id="helpSubmit"
+                    style="display:none;">
+            </button>
+
+            <button type="submit"
+                    asp-page-handler="Previous"
+                    id="previousSubmit"
+                    style="display:none;">
+            </button>
+
+        </form>
+    </div>
+
+
+    <script>
+        (() => {
+            const form = document.getElementById("pcpmForm");
+
+            form.addEventListener("keydown", function (event) {
+
+                // ENTER
+                if (event.key === "Enter") {
+                    event.preventDefault();
+
+                    document.getElementById("defaultSubmit").click();
+                    return;
+                }
+
+                // F1 - Help
+                if (event.key === "F1") {
+                    event.preventDefault();
+
+                    document.getElementById("helpSubmit").click();
+                    return;
+                }
+
+                // F3 - Previous
+                if (event.key === "F3") {
+                    event.preventDefault();
+
+                    document.getElementById("previousSubmit").click();
+                    return;
+                }
+            });
+
+            // Old WebForms page forced selection characters uppercase.
+            document.querySelectorAll(".select-field")
+                .forEach(input => {
+                    input.addEventListener("input", function () {
+                        this.value = this.value.toUpperCase();
+                    });
+                });
+        })();
+    </script>
+
+</body>
+</html>
