@@ -1,347 +1,1499 @@
-@page
-@model PCPM.Pages.D158500Model
-@{
-    ViewData["Title"] = "D158500";
-    Layout = null;
+using Microsoft.AspNetCore.Mvc;
+
+using Microsoft.AspNetCore.Mvc.RazorPages;
+
+using Microsoft.AspNetCore.Http;
+
+using PCPM.Session;
+
+// Change this using only if your D158500 service is in a different namespace.
+
+// using PCPM.Application.D158500;
+
+namespace PCPM.Pages;
+
+public class D158500Model : PageModel
+
+{
+
+    private const string ScreenId = "D158500";
+
+    private readonly ID158500Service _service;
+
+    public D158500Model(ID158500Service service)
+
+    {
+
+        _service = service;
+
+    }
+
+    // ============================================================
+
+    // SCREEN INPUT FIELDS
+
+    // ============================================================
+
+    [BindProperty]
+
+    public string Action { get; set; } = string.Empty;
+
+    [BindProperty]
+
+    public string JobNumber { get; set; } = string.Empty;
+
+    [BindProperty]
+
+    public string SF { get; set; } = string.Empty;
+
+    [BindProperty]
+
+    public string SelRem { get; set; } = string.Empty;
+
+    [BindProperty]
+
+    public List<D158500StatusRow> Rows { get; set; } = new();
+
+    // ============================================================
+
+    // SCREEN OUTPUT FIELDS
+
+    // ============================================================
+
+    public string Remark { get; set; } = string.Empty;
+
+    public string LastUpdated { get; set; } = string.Empty;
+
+    public string ErrorMessage { get; set; } = string.Empty;
+
+    // ============================================================
+
+    // GET
+
+    // ============================================================
+
+    public async Task<IActionResult> OnGetAsync()
+
+    {
+
+        UpdateCurrentScreenSession();
+
+        var sessionJobNumber =
+
+            HttpContext.Session.GetString(
+
+                PcpmSessionKeys.JobNumber);
+
+        if (!string.IsNullOrWhiteSpace(sessionJobNumber))
+
+        {
+
+            JobNumber = sessionJobNumber;
+
+        }
+
+        await LoadScreenAsync();
+
+        return Page();
+
+    }
+
+    // ============================================================
+
+    // ENTER / MAIN SUBMIT
+
+    //
+
+    // This corresponds roughly to:
+
+    //
+
+    // WHEN $ENTER-KEY
+
+    //     DO CHECK-CONFLICT
+
+    //     ...
+
+    //     DO NAVIGATION-PREP
+
+    //
+
+    // ============================================================
+
+    public async Task<IActionResult> OnPostAsync()
+
+    {
+
+        NormalizeInput();
+
+        EnsureRowsExist();
+
+        var selectedRows =
+
+            Rows
+
+                .Where(r =>
+
+                    !string.IsNullOrWhiteSpace(r.Selection))
+
+                .ToList();
+
+        // --------------------------------------------------------
+
+        // COBOL CHECK-CONFLICT
+
+        //
+
+        // Only ONE navigation method is allowed:
+
+        //
+
+        // Action
+
+        // SF
+
+        // Remark
+
+        // Status row
+
+        // --------------------------------------------------------
+
+        var navigationCount = 0;
+
+        if (!string.IsNullOrWhiteSpace(Action))
+
+        {
+
+            navigationCount++;
+
+        }
+
+        if (!string.IsNullOrWhiteSpace(SF))
+
+        {
+
+            navigationCount++;
+
+        }
+
+        if (!string.IsNullOrWhiteSpace(SelRem))
+
+        {
+
+            navigationCount++;
+
+        }
+
+        navigationCount += selectedRows.Count;
+
+        if (navigationCount > 1)
+
+        {
+
+            ErrorMessage = "NAVIGATION CONFLICT";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        // ========================================================
+
+        // ACTION ENTERED
+
+        // ========================================================
+
+        if (!string.IsNullOrWhiteSpace(Action))
+
+        {
+
+            return await ProcessActionAsync();
+
+        }
+
+        // ========================================================
+
+        // SF SELECTED
+
+        // ========================================================
+
+        if (!string.IsNullOrWhiteSpace(SF))
+
+        {
+
+            return await ProcessSfAsync();
+
+        }
+
+        // ========================================================
+
+        // REMARK SELECTED
+
+        // ========================================================
+
+        if (!string.IsNullOrWhiteSpace(SelRem))
+
+        {
+
+            return await ProcessRemarkAsync();
+
+        }
+
+        // ========================================================
+
+        // ONE FUNCTIONAL AREA ROW SELECTED
+
+        // ========================================================
+
+        if (selectedRows.Count == 1)
+
+        {
+
+            return await ProcessStatusRowAsync(
+
+                selectedRows[0]);
+
+        }
+
+        // ========================================================
+
+        // NO ACTION / NO SELECTION
+
+        //
+
+        // If a Job Number exists, ENTER means:
+
+        //
+
+        // Reload D158500 using that Job Number.
+
+        //
+
+        // This corresponds to NEW-JOBNO behavior in the COBOL.
+
+        // ========================================================
+
+        if (!string.IsNullOrWhiteSpace(JobNumber))
+
+        {
+
+            HttpContext.Session.SetString(
+
+                PcpmSessionKeys.JobNumber,
+
+                JobNumber);
+
+            await LoadScreenAsync();
+
+            return Page();
+
+        }
+
+        // ========================================================
+
+        // NOTHING ENTERED
+
+        // ========================================================
+
+        ErrorMessage = "SELECTION NOT SPECIFIED";
+
+        await ReloadScreenPreservingErrorAsync();
+
+        return Page();
+
+    }
+
+    // ============================================================
+
+    // F1 - HELP
+
+    //
+
+    // Original COBOL:
+
+    //
+
+    // WHEN $PF1
+
+    //    CHECK-CONFLICT
+
+    //    CALL P158999
+
+    //
+
+    // Change D158999 below if your help page uses another name.
+
+    // ============================================================
+
+    public IActionResult OnPostHelp()
+
+    {
+
+        SaveJobNumberToSession();
+
+        SetNavigationSession("D158999");
+
+        return RedirectToPage("/D158999");
+
+    }
+
+    // ============================================================
+
+    // PF3 - RETURN TO PREVIOUS SCREEN
+
+    //
+
+    // Original COBOL:
+
+    //
+
+    // MOVE W-PREV TO W-NEXT
+
+    // QUIT P158500
+
+    // ============================================================
+
+    public IActionResult OnPostBack()
+
+    {
+
+        var previousScreen =
+
+            HttpContext.Session.GetString(
+
+                PcpmSessionKeys.PreviousScreen);
+
+        if (string.IsNullOrWhiteSpace(previousScreen))
+
+        {
+
+            previousScreen = "D158000";
+
+        }
+
+        SaveJobNumberToSession();
+
+        HttpContext.Session.SetString(
+
+            PcpmSessionKeys.CurrentScreen,
+
+            previousScreen);
+
+        return RedirectToPage(
+
+            "/" + previousScreen);
+
+    }
+
+    // ============================================================
+
+    // PF6 - RESET / REFRESH
+
+    //
+
+    // Original COBOL:
+
+    //
+
+    // REFRESH D158500
+
+    // SCREEN-RESET = TRUE
+
+    // LOAD-FUNC-AREA
+
+    // PROTECT-SELECT
+
+    //
+
+    // ============================================================
+
+    public async Task<IActionResult> OnPostResetAsync()
+
+    {
+
+        NormalizeInput();
+
+        Action = string.Empty;
+
+        SF = string.Empty;
+
+        SelRem = string.Empty;
+
+        ErrorMessage = string.Empty;
+
+        foreach (var row in Rows)
+
+        {
+
+            row.Selection = string.Empty;
+
+        }
+
+        SaveJobNumberToSession();
+
+        await LoadScreenAsync();
+
+        return Page();
+
+    }
+
+    // ============================================================
+
+    // PF7 - PREVIOUS JOB
+
+    //
+
+    // COBOL searches:
+
+    //
+
+    // STATUS = '01'
+
+    // DELFLAG = SPACES
+
+    // JOBNO < current job
+
+    // ORDER BY JOBNO DESC
+
+    //
+
+    // ============================================================
+
+    public async Task<IActionResult> OnPostPreviousAsync()
+
+    {
+
+        NormalizeInput();
+
+        if (string.IsNullOrWhiteSpace(JobNumber))
+
+        {
+
+            ErrorMessage = "JOB NUMBER REQUIRED";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        var previousJobNumber =
+
+            await _service.GetPreviousJobNumberAsync(
+
+                JobNumber,
+
+                HttpContext.RequestAborted);
+
+        if (string.IsNullOrWhiteSpace(previousJobNumber))
+
+        {
+
+            ErrorMessage = "BEGINNING OF FILE";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        JobNumber = previousJobNumber;
+
+        SaveJobNumberToSession();
+
+        await LoadScreenAsync();
+
+        return Page();
+
+    }
+
+    // ============================================================
+
+    // PF8 - NEXT JOB
+
+    //
+
+    // COBOL searches:
+
+    //
+
+    // STATUS = '01'
+
+    // DELFLAG = SPACES
+
+    // JOBNO > current job
+
+    // ORDER BY JOBNO ASC
+
+    //
+
+    // ============================================================
+
+    public async Task<IActionResult> OnPostNextAsync()
+
+    {
+
+        NormalizeInput();
+
+        if (string.IsNullOrWhiteSpace(JobNumber))
+
+        {
+
+            ErrorMessage = "JOB NUMBER REQUIRED";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        var nextJobNumber =
+
+            await _service.GetNextJobNumberAsync(
+
+                JobNumber,
+
+                HttpContext.RequestAborted);
+
+        if (string.IsNullOrWhiteSpace(nextJobNumber))
+
+        {
+
+            ErrorMessage = "END OF FILE";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        JobNumber = nextJobNumber;
+
+        SaveJobNumberToSession();
+
+        await LoadScreenAsync();
+
+        return Page();
+
+    }
+
+    // ============================================================
+
+    // PF12 - EXIT
+
+    //
+
+    // Original COBOL:
+
+    //
+
+    // W-NEXT = '000'
+
+    //
+
+    // ============================================================
+
+    public IActionResult OnPostExit()
+
+    {
+
+        SaveJobNumberToSession();
+
+        SetNavigationSession("D158000");
+
+        return RedirectToPage("/D158000");
+
+    }
+
+    // ============================================================
+
+    // PROCESS ACTION FIELD
+
+    //
+
+    // COBOL VALIDATE-ACTION:
+
+    //
+
+    // ACTION = 'SO'
+
+    //
+
+    // OR
+
+    //
+
+    // ACTION contains numeric characters
+
+    //
+
+    // ============================================================
+
+    private async Task<IActionResult> ProcessActionAsync()
+
+    {
+
+        var validAction =
+
+            Action == "SO" ||
+
+            Action.All(char.IsDigit);
+
+        if (!validAction)
+
+        {
+
+            ErrorMessage = "INVALID ACTION CODE";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        SaveJobNumberToSession();
+
+        // --------------------------------------------------------
+
+        // SO is valid in legacy PCPM, but its final destination
+
+        // has not yet been confirmed from the code supplied.
+
+        // --------------------------------------------------------
+
+        if (Action == "SO")
+
+        {
+
+            ErrorMessage =
+
+                "SO ACTION IS NOT WIRED YET.";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        // --------------------------------------------------------
+
+        // Normalize numeric action to 3 digits.
+
+        //
+
+        // Example:
+
+        //
+
+        // 10  -> 010
+
+        // 202 -> 202
+
+        // 500 -> 500
+
+        // --------------------------------------------------------
+
+        if (!int.TryParse(Action, out var actionNumber))
+
+        {
+
+            ErrorMessage = "INVALID ACTION CODE";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        var screenNumber =
+
+            actionNumber.ToString("000");
+
+        var nextScreen =
+
+            $"D158{screenNumber}";
+
+        SetNavigationSession(nextScreen);
+
+        return RedirectToPage(
+
+            "/" + nextScreen);
+
+    }
+
+    // ============================================================
+
+    // PROCESS SF
+
+    //
+
+    // Legacy COBOL:
+
+    //
+
+    // IF SF = 'S'
+
+    //     W-NEXT = '510'
+
+    //
+
+    // ============================================================
+
+    private async Task<IActionResult> ProcessSfAsync()
+
+    {
+
+        if (SF != "S")
+
+        {
+
+            ErrorMessage =
+
+                "INVALID SELECTION CODE";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        SaveJobNumberToSession();
+
+        SetNavigationSession("D158510");
+
+        return RedirectToPage("/D158510");
+
+    }
+
+    // ============================================================
+
+    // PROCESS REMARK
+
+    //
+
+    // Legacy COBOL:
+
+    //
+
+    // SELREM = 'S'
+
+    // W-NEXT = '550'
+
+    //
+
+    // ============================================================
+
+    private async Task<IActionResult> ProcessRemarkAsync()
+
+    {
+
+        if (SelRem != "S")
+
+        {
+
+            ErrorMessage =
+
+                "INVALID SELECTION CODE";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        SaveJobNumberToSession();
+
+        SetNavigationSession("D158550");
+
+        return RedirectToPage("/D158550");
+
+    }
+
+    // ============================================================
+
+    // PROCESS FUNCTIONAL AREA ROW
+
+    //
+
+    // COBOL:
+
+    //
+
+    // SELECT(I) = 'S' OR 'I'
+
+    //     W-FA = FUNC-AREA(I)
+
+    //     W-NEXT = '302'
+
+    //
+
+    // SELECT(I) = 'U'
+
+    //     W-FA = FUNC-AREA(I)
+
+    //     W-NEXT = '202'
+
+    //
+
+    // ============================================================
+
+    private async Task<IActionResult> ProcessStatusRowAsync(
+
+        D158500StatusRow row)
+
+    {
+
+        var selection =
+
+            row.Selection
+
+                ?.Trim()
+
+                .ToUpperInvariant()
+
+            ?? string.Empty;
+
+        if (selection != "S" &&
+
+            selection != "I" &&
+
+            selection != "U")
+
+        {
+
+            ErrorMessage =
+
+                "INVALID SELECTION CODE";
+
+            await ReloadScreenPreservingErrorAsync();
+
+            return Page();
+
+        }
+
+        SaveJobNumberToSession();
+
+        // --------------------------------------------------------
+
+        // Store Functional Area in PCPM Session
+
+        //
+
+        // This recreates W-FA behavior so the next screen can
+
+        // automatically receive the selected FA.
+
+        // --------------------------------------------------------
+
+        HttpContext.Session.SetString(
+
+            PcpmSessionKeys.FunctionalArea,
+
+            row.FunctionalArea ?? string.Empty);
+
+        // --------------------------------------------------------
+
+        // S / I -> D158302
+
+        // --------------------------------------------------------
+
+        if (selection == "S" ||
+
+            selection == "I")
+
+        {
+
+            SetNavigationSession("D158302");
+
+            return RedirectToPage("/D158302");
+
+        }
+
+        // --------------------------------------------------------
+
+        // U -> D158202
+
+        // --------------------------------------------------------
+
+        SetNavigationSession("D158202");
+
+        return RedirectToPage("/D158202");
+
+    }
+
+    // ============================================================
+
+    // LOAD D158500
+
+    //
+
+    // Equivalent to the COBOL LOAD-PANEL logic:
+
+    //
+
+    // LOAD-JOBREC
+
+    // LOAD-FUNC-AREA
+
+    // LOAD-STAT-REC
+
+    // LOAD-REMARK
+
+    //
+
+    // ============================================================
+
+    private async Task LoadScreenAsync()
+
+    {
+
+        EnsureRowsExist();
+
+        if (string.IsNullOrWhiteSpace(JobNumber))
+
+        {
+
+            ClearDisplayedJobData();
+
+            return;
+
+        }
+
+        var result =
+
+            await _service.LoadJobSummaryAsync(
+
+                JobNumber,
+
+                HttpContext.RequestAborted);
+
+        if (!result.Success)
+
+        {
+
+            ErrorMessage =
+
+                result.ErrorMessage
+
+                ?? "NO RECORDS FOUND";
+
+            ClearDisplayedJobData(
+
+                preserveJobNumber: true);
+
+            return;
+
+        }
+
+        // --------------------------------------------------------
+
+        // Job Number returned from database may be different from
+
+        // the entered value if the legacy "first >= job" behavior
+
+        // is implemented in the repository.
+
+        // --------------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(
+
+                result.JobNumber))
+
+        {
+
+            JobNumber =
+
+                result.JobNumber.Trim();
+
+        }
+
+        // --------------------------------------------------------
+
+        // Functional Area rows
+
+        // --------------------------------------------------------
+
+        Rows =
+
+            result.Rows?.ToList()
+
+            ?? new List<D158500StatusRow>();
+
+        // D158500 has 11 selectable FA rows.
+
+        while (Rows.Count < 11)
+
+        {
+
+            Rows.Add(
+
+                new D158500StatusRow
+
+                {
+
+                    RowNumber =
+
+                        Rows.Count + 1
+
+                });
+
+        }
+
+        if (Rows.Count > 11)
+
+        {
+
+            Rows =
+
+                Rows
+
+                    .Take(11)
+
+                    .ToList();
+
+        }
+
+        for (var i = 0; i < Rows.Count; i++)
+
+        {
+
+            Rows[i].RowNumber = i + 1;
+
+            // Selection is user input only.
+
+            Rows[i].Selection =
+
+                string.Empty;
+
+        }
+
+        Remark =
+
+            result.Remark
+
+            ?? string.Empty;
+
+        LastUpdated =
+
+            result.LastUpdated
+
+            ?? string.Empty;
+
+        SaveJobNumberToSession();
+
+    }
+
+    // ============================================================
+
+    // RELOAD SCREEN WHILE KEEPING CURRENT ERROR MESSAGE
+
+    // ============================================================
+
+    private async Task ReloadScreenPreservingErrorAsync()
+
+    {
+
+        var savedError =
+
+            ErrorMessage;
+
+        await LoadScreenAsync();
+
+        ErrorMessage =
+
+            savedError;
+
+    }
+
+    // ============================================================
+
+    // NORMALIZE POSTED INPUT
+
+    // ============================================================
+
+    private void NormalizeInput()
+
+    {
+
+        Action =
+
+            (Action ?? string.Empty)
+
+                .Trim()
+
+                .ToUpperInvariant();
+
+        JobNumber =
+
+            (JobNumber ?? string.Empty)
+
+                .Trim()
+
+                .ToUpperInvariant();
+
+        SF =
+
+            (SF ?? string.Empty)
+
+                .Trim()
+
+                .ToUpperInvariant();
+
+        SelRem =
+
+            (SelRem ?? string.Empty)
+
+                .Trim()
+
+                .ToUpperInvariant();
+
+        EnsureRowsExist();
+
+        foreach (var row in Rows)
+
+        {
+
+            row.Selection =
+
+                (row.Selection ?? string.Empty)
+
+                    .Trim()
+
+                    .ToUpperInvariant();
+
+        }
+
+    }
+
+    // ============================================================
+
+    // ENSURE D158500 ALWAYS HAS 11 ROWS
+
+    // ============================================================
+
+    private void EnsureRowsExist()
+
+    {
+
+        Rows ??=
+
+            new List<D158500StatusRow>();
+
+        while (Rows.Count < 11)
+
+        {
+
+            Rows.Add(
+
+                new D158500StatusRow
+
+                {
+
+                    RowNumber =
+
+                        Rows.Count + 1
+
+                });
+
+        }
+
+        if (Rows.Count > 11)
+
+        {
+
+            Rows =
+
+                Rows
+
+                    .Take(11)
+
+                    .ToList();
+
+        }
+
+        for (var i = 0; i < Rows.Count; i++)
+
+        {
+
+            Rows[i].RowNumber = i + 1;
+
+        }
+
+    }
+
+    // ============================================================
+
+    // CLEAR DISPLAY VALUES
+
+    // ============================================================
+
+    private void ClearDisplayedJobData(
+
+        bool preserveJobNumber = false)
+
+    {
+
+        if (!preserveJobNumber)
+
+        {
+
+            JobNumber =
+
+                string.Empty;
+
+        }
+
+        Remark =
+
+            string.Empty;
+
+        LastUpdated =
+
+            string.Empty;
+
+        Rows =
+
+            new List<D158500StatusRow>();
+
+        EnsureRowsExist();
+
+    }
+
+    // ============================================================
+
+    // STORE CURRENT JOB NUMBER
+
+    //
+
+    // This is the ASP.NET Core equivalent of keeping W-JOBNO
+
+    // available when moving from screen to screen.
+
+    // ============================================================
+
+    private void SaveJobNumberToSession()
+
+    {
+
+        if (string.IsNullOrWhiteSpace(JobNumber))
+
+        {
+
+            return;
+
+        }
+
+        HttpContext.Session.SetString(
+
+            PcpmSessionKeys.JobNumber,
+
+            JobNumber.Trim());
+
+    }
+
+    // ============================================================
+
+    // INITIALIZE / UPDATE CURRENT SCREEN
+
+    // ============================================================
+
+    private void UpdateCurrentScreenSession()
+
+    {
+
+        var currentScreen =
+
+            HttpContext.Session.GetString(
+
+                PcpmSessionKeys.CurrentScreen);
+
+        if (string.Equals(
+
+                currentScreen,
+
+                ScreenId,
+
+                StringComparison.OrdinalIgnoreCase))
+
+        {
+
+            return;
+
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+
+                currentScreen))
+
+        {
+
+            HttpContext.Session.SetString(
+
+                PcpmSessionKeys.PreviousScreen,
+
+                currentScreen);
+
+        }
+
+        HttpContext.Session.SetString(
+
+            PcpmSessionKeys.CurrentScreen,
+
+            ScreenId);
+
+    }
+
+    // ============================================================
+
+    // SET NEXT SCREEN IN PCPM SESSION
+
+    //
+
+    // W-PREV / W-CURR / W-NEXT equivalent
+
+    // ============================================================
+
+    private void SetNavigationSession(
+
+        string nextScreen)
+
+    {
+
+        HttpContext.Session.SetString(
+
+            PcpmSessionKeys.PreviousScreen,
+
+            ScreenId);
+
+        HttpContext.Session.SetString(
+
+            PcpmSessionKeys.CurrentScreen,
+
+            nextScreen);
+
+    }
+
 }
 
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8" />
-    <title>PCPM - Functional Area Status</title>
-
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            min-height: 100%;
-            background-color: #d7dfc0;
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            color: #000;
-        }
-
-        .pcpm-screen {
-            padding: 24px 32px;
-            min-width: 1050px;
-        }
-
-        .screen-title {
-            text-align: center;
-            font-weight: bold;
-            margin-bottom: 22px;
-        }
-
-        .screen-info {
-            display: grid;
-            grid-template-columns: 150px 190px 70px 120px 110px 120px;
-            gap: 8px;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .pcpm-label {
-            font-weight: bold;
-            white-space: nowrap;
-        }
-
-        .pcpm-input {
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-
-            /* Same terminal/background appearance */
-            background-color: #d7dfc0;
-            color: #000;
-
-            border: none;
-            border-bottom: 1px solid #555;
-            outline: none;
-            padding: 2px 4px;
-            box-sizing: border-box;
-        }
-
-        .pcpm-input:focus {
-            outline: 1px solid #333;
-        }
-
-        .readonly-field {
-            border-bottom: none;
-        }
-
-        .fa-table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0 7px;
-        }
-
-        .fa-table th {
-            text-align: left;
-            font-weight: bold;
-            padding: 4px;
-            white-space: nowrap;
-        }
-
-        .fa-table td {
-            padding: 2px 4px;
-            vertical-align: middle;
-        }
-
-        .select-field {
-            width: 28px;
-            text-align: center;
-            text-transform: uppercase;
-        }
-
-        .fa-field {
-            width: 55px;
-            text-transform: uppercase;
-        }
-
-        .description-field {
-            width: 245px;
-        }
-
-        .date-field {
-            width: 105px;
-        }
-
-        .percent-field {
-            width: 60px;
-            text-align: right;
-        }
-
-        .status-field {
-            width: 90px;
-        }
-
-        .footer-section {
-            margin-top: 24px;
-            display: grid;
-            grid-template-columns: 160px 400px;
-            row-gap: 8px;
-        }
-
-        .message {
-            margin-top: 20px;
-            min-height: 24px;
-            font-weight: bold;
-        }
-
-        .error-message {
-            color: #8b0000;
-        }
-
-        .function-keys {
-            margin-top: 28px;
-            white-space: pre;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="pcpm-screen">
-
-        <div class="screen-title">
-            PRE-CONSTRUCTION PROJECT MONITORING SYSTEM
-            <br />
-            FUNCTIONAL AREA STATUS
-        </div>
-
-        <form method="post" id="pcpmForm">
-
-            @*
-                Keep these values with the PCPM session.
-                They can also be displayed if you want them visible.
-            *@
-
-            <div class="screen-info">
-
-                <span class="pcpm-label">JOB NUMBER:</span>
-                <input asp-for="JobNumber"
-                       class="pcpm-input"
-                       maxlength="10" />
-
-                <span class="pcpm-label">FA:</span>
-                <input asp-for="FA"
-                       class="pcpm-input"
-                       maxlength="2"
-                       style="width:50px;" />
-
-                <span class="pcpm-label">SEQ:</span>
-                <input asp-for="JobSequence"
-                       class="pcpm-input"
-                       maxlength="3"
-                       style="width:60px;" />
-            </div>
-
-
-            <table class="fa-table">
-                <thead>
-                    <tr>
-                        <th>SEL</th>
-                        <th>FA</th>
-                        <th>FUNCTIONAL AREA DESCRIPTION</th>
-                        <th>START DATE</th>
-                        <th>PROJ END</th>
-                        <th>%</th>
-                        <th>FA END</th>
-                        <th>STATUS</th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    @for (int i = 0; i < Model.Rows.Count; i++)
-                    {
-                        <tr>
-                            <td>
-                                <input asp-for="Rows[i].Selection"
-                                       class="pcpm-input select-field"
-                                       maxlength="1"
-                                       autocomplete="off" />
-
-                                <input asp-for="Rows[i].RowNumber"
-                                       type="hidden" />
-                            </td>
-
-                            <td>
-                                <input asp-for="Rows[i].FunctionalArea"
-                                       class="pcpm-input fa-field readonly-field"
-                                       readonly />
-                            </td>
-
-                            <td>
-                                <input asp-for="Rows[i].FunctionalAreaDescription"
-                                       class="pcpm-input description-field readonly-field"
-                                       readonly />
-                            </td>
-
-                            <td>
-                                <input asp-for="Rows[i].StartDate"
-                                       class="pcpm-input date-field readonly-field"
-                                       readonly />
-                            </td>
-
-                            <td>
-                                <input asp-for="Rows[i].ProjectedEndDate"
-                                       class="pcpm-input date-field readonly-field"
-                                       readonly />
-                            </td>
-
-                            <td>
-                                <input asp-for="Rows[i].PercentComplete"
-                                       class="pcpm-input percent-field readonly-field"
-                                       readonly />
-                            </td>
-
-                            <td>
-                                <input asp-for="Rows[i].EndDate"
-                                       class="pcpm-input date-field readonly-field"
-                                       readonly />
-                            </td>
-
-                            <td>
-                                <input asp-for="Rows[i].Status"
-                                       class="pcpm-input status-field readonly-field"
-                                       readonly />
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-
-
-            <div class="footer-section">
-
-                <span class="pcpm-label">LAST REMARK:</span>
-                <input asp-for="LastRemark"
-                       class="pcpm-input readonly-field"
-                       readonly />
-
-                <span class="pcpm-label">LAST UPDATED:</span>
-                <input asp-for="LastUpdated"
-                       class="pcpm-input readonly-field"
-                       readonly />
-            </div>
-
-
-            <div class="message">
-                @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-                {
-                    <span class="error-message">
-                        @Model.ErrorMessage
-                    </span>
-                }
-            </div>
-
-
-            <div class="function-keys">
-F1=HELP     F3=BACK     ENTER=PROCESS
-            </div>
-
-            <!-- Used for keyboard handlers -->
-            <button type="submit"
-                    id="defaultSubmit"
-                    style="display:none;">
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="Help"
-                    id="helpSubmit"
-                    style="display:none;">
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="Previous"
-                    id="previousSubmit"
-                    style="display:none;">
-            </button>
-
-        </form>
-    </div>
-
-
-    <script>
-        (() => {
-            const form = document.getElementById("pcpmForm");
-
-            form.addEventListener("keydown", function (event) {
-
-                // ENTER
-                if (event.key === "Enter") {
-                    event.preventDefault();
-
-                    document.getElementById("defaultSubmit").click();
-                    return;
-                }
-
-                // F1 - Help
-                if (event.key === "F1") {
-                    event.preventDefault();
-
-                    document.getElementById("helpSubmit").click();
-                    return;
-                }
-
-                // F3 - Previous
-                if (event.key === "F3") {
-                    event.preventDefault();
-
-                    document.getElementById("previousSubmit").click();
-                    return;
-                }
-            });
-
-            // Old WebForms page forced selection characters uppercase.
-            document.querySelectorAll(".select-field")
-                .forEach(input => {
-                    input.addEventListener("input", function () {
-                        this.value = this.value.toUpperCase();
-                    });
-                });
-        })();
-    </script>
-
-</body>
-</html>
+// ================================================================
+
+// D158500 STATUS ROW
+
+//
+
+// This represents one of the 11 Functional Area rows displayed
+
+// by the Job Status Summary screen.
+
+//
+
+// If you already created this class in PCPM.Application,
+
+// REMOVE this copy and use your existing class instead.
+
+// ================================================================
+
+public class D158500StatusRow
+
+{
+
+    public int RowNumber { get; set; }
+
+    public string Selection { get; set; }
+
+        = string.Empty;
+
+    public string FunctionalArea { get; set; }
+
+        = string.Empty;
+
+    public string StartDate { get; set; }
+
+        = string.Empty;
+
+    public string ProjectedEnd { get; set; }
+
+        = string.Empty;
+
+    public string Percent { get; set; }
+
+        = string.Empty;
+
+    public string EndDate { get; set; }
+
+        = string.Empty;
+
+    public string Status { get; set; }
+
+        = string.Empty;
+
+}
+
+// ================================================================
+
+// D158500 SERVICE RESULT
+
+//
+
+// If this already exists in your Application project,
+
+// REMOVE this copy and reference your existing class.
+
+// ================================================================
+
+public class D158500Result
+
+{
+
+    public bool Success { get; set; }
+
+    public string? JobNumber { get; set; }
+
+    public List<D158500StatusRow> Rows { get; set; }
+
+        = new();
+
+    public string? Remark { get; set; }
+
+    public string? LastUpdated { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+}
+
+// ================================================================
+
+// D158500 SERVICE CONTRACT
+
+//
+
+// If you already created ID158500Service elsewhere,
+
+// REMOVE this interface from this file and use your existing one.
+
+// ================================================================
+
+public interface ID158500Service
+
+{
+
+    Task<D158500Result> LoadJobSummaryAsync(
+
+        string jobNumber,
+
+        CancellationToken cancellationToken);
+
+    Task<string?> GetPreviousJobNumberAsync(
+
+        string currentJobNumber,
+
+        CancellationToken cancellationToken);
+
+    Task<string?> GetNextJobNumberAsync(
+
+        string currentJobNumber,
+
+        CancellationToken cancellationToken);
+
+}
