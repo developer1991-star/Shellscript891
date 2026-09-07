@@ -1,27 +1,41 @@
-namespace PCPM.Web.Session;
+ public string GetOrCreate(string userId)
 
-public interface IPcpmSessionService
-{
-    string CreateSession(string userId);
+    {
 
-    string? GetSessionId();
+        var sessionId =
 
-    string? GetUserId();
+            Session.GetString(PcpmSessionKeys.SessionId);
 
-    void SetCurrentScreen(string screen);
-    string? GetCurrentScreen();
+        if (!string.IsNullOrWhiteSpace(sessionId))
 
-    void SetPreviousScreen(string screen);
-    string? GetPreviousScreen();
+        {
 
-    void SetJobNumber(string jobNumber);
-    string? GetJobNumber();
+            return sessionId;
 
-    void SetFunctionalArea(string functionalArea);
-    string? GetFunctionalArea();
+        }
 
-    void SetJobSequence(string jobSequence);
-    string? GetJobSequence();
+        Clear();
 
-    void Clear();
-}
+        sessionId = RandomNumberGenerator
+
+            .GetInt32(1, 1_000_000)
+
+            .ToString("D6", CultureInfo.InvariantCulture);
+
+        Session.SetString(
+
+            PcpmSessionKeys.SessionId,
+
+            sessionId);
+
+        Session.SetString(
+
+            PcpmSessionKeys.UserId,
+
+            userId);
+
+        return sessionId;
+
+    }
+
+ 
