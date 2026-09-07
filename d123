@@ -1,99 +1,86 @@
-namespace PCPM.Web.Session;
-
-public interface IPcpmSessionService
-{
-    string GetOrCreate(string userId);
-
-    string? GetSessionNumber();
-
-    string? GetUserId();
-
-    void SetCurrentScreen(string screenName);
-
-    string? GetCurrentScreen();
-
-    void Clear();
-}
-
-
+using Microsoft.AspNetCore.Http;
+using PCPM.Session;
 using System.Globalization;
 using System.Security.Cryptography;
 
 namespace PCPM.Web.Session;
 
-public sealed class PcpmSessionService : IPcpmSessionService
+public class PcpmSessionService : IPcpmSessionService
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public PcpmSessionService(
-        IHttpContextAccessor httpContextAccessor)
+    public PcpmSessionService(IHttpContextAccessor httpContextAccessor)
     {
         _httpContextAccessor = httpContextAccessor;
     }
 
-    private ISession Session =>
-        _httpContextAccessor.HttpContext?.Session
-        ?? throw new InvalidOperationException(
-            "HTTP session is not available.");
-
-    public string GetOrCreate(string userId)
+    private ISession Session
     {
-        var sessionNumber =
-            Session.GetString(PcpmSessionKeys.SessionNumber);
-
-        var existingUserId =
-            Session.GetString(PcpmSessionKeys.UserId);
-
-        if (!string.IsNullOrWhiteSpace(sessionNumber) &&
-            string.Equals(
-                existingUserId,
-                userId,
-                StringComparison.OrdinalIgnoreCase))
+        get
         {
-            return sessionNumber;
-        }
+            var session = _httpContextAccessor.HttpContext?.Session;
 
+            if (session == null)
+            {
+                throw new InvalidOperationException(
+                    "HTTP session is not available.");
+            }
+
+            return session;
+        }
+    }
+
+    // -------------------------------------------------
+    // CREATE PCPM SESSION
+    // -------------------------------------------------
+    public string CreateSession(string userId)
+    {
         Clear();
 
-        sessionNumber =
+        var sessionId =
             RandomNumberGenerator
                 .GetInt32(1, 1_000_000)
-                .ToString("D6", CultureInfo.InvariantCulture);
+                .ToString(
+                    "D6",
+                    CultureInfo.InvariantCulture);
 
         Session.SetString(
-            PcpmSessionKeys.SessionNumber,
-            sessionNumber);
+            PcpmSessionKeys.SessionId,
+            sessionId);
 
         Session.SetString(
             PcpmSessionKeys.UserId,
             userId);
 
-        Session.SetString(
-            PcpmSessionKeys.CreatedUtc,
-            DateTimeOffset.UtcNow.ToString(
-                "O",
-                CultureInfo.InvariantCulture));
-
-        return sessionNumber;
+        return sessionId;
     }
 
-    public string? GetSessionNumber()
+    // -------------------------------------------------
+    // SESSION ID
+    // -------------------------------------------------
+    public string? GetSessionId()
     {
         return Session.GetString(
-            PcpmSessionKeys.SessionNumber);
+            PcpmSessionKeys.SessionId);
     }
 
+    // -------------------------------------------------
+    // USER ID
+    // -------------------------------------------------
     public string? GetUserId()
     {
         return Session.GetString(
             PcpmSessionKeys.UserId);
     }
 
-    public void SetCurrentScreen(string screenName)
+    // -------------------------------------------------
+    // CURRENT SCREEN
+    // -------------------------------------------------
+    public void SetCurrentScreen(string screen)
     {
         Session.SetString(
             PcpmSessionKeys.CurrentScreen,
-            screenName);
+            screen);
     }
 
     public string? GetCurrentScreen()
@@ -102,11 +89,75 @@ public sealed class PcpmSessionService : IPcpmSessionService
             PcpmSessionKeys.CurrentScreen);
     }
 
+    // -------------------------------------------------
+    // PREVIOUS SCREEN
+    // -------------------------------------------------
+    public void SetPreviousScreen(string screen)
+    {
+        Session.SetString(
+            PcpmSessionKeys.PreviousScreen,
+            screen);
+    }
+
+    public string? GetPreviousScreen()
+    {
+        return Session.GetString(
+            PcpmSessionKeys.PreviousScreen);
+    }
+
+    // -------------------------------------------------
+    // JOB NUMBER
+    // -------------------------------------------------
+    public void SetJobNumber(string jobNumber)
+    {
+        Session.SetString(
+            PcpmSessionKeys.JobNumber,
+            jobNumber);
+    }
+
+    public string? GetJobNumber()
+    {
+        return Session.GetString(
+            PcpmSessionKeys.JobNumber);
+    }
+
+    // -------------------------------------------------
+    // FUNCTIONAL AREA
+    // -------------------------------------------------
+    public void SetFunctionalArea(string functionalArea)
+    {
+        Session.SetString(
+            PcpmSessionKeys.FunctionalArea,
+            functionalArea);
+    }
+
+    public string? GetFunctionalArea()
+    {
+        return Session.GetString(
+            PcpmSessionKeys.FunctionalArea);
+    }
+
+    // -------------------------------------------------
+    // JOB SEQUENCE
+    // -------------------------------------------------
+    public void SetJobSequence(string jobSequence)
+    {
+        Session.SetString(
+            PcpmSessionKeys.JobSequence,
+            jobSequence);
+    }
+
+    public string? GetJobSequence()
+    {
+        return Session.GetString(
+            PcpmSessionKeys.JobSequence);
+    }
+
+    // -------------------------------------------------
+    // CLEAR SESSION
+    // -------------------------------------------------
     public void Clear()
     {
-        Session.Remove(PcpmSessionKeys.SessionNumber);
-        Session.Remove(PcpmSessionKeys.UserId);
-        Session.Remove(PcpmSessionKeys.CreatedUtc);
-        Session.Remove(PcpmSessionKeys.CurrentScreen);
+        Session.Clear();
     }
 }
