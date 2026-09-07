@@ -1,114 +1,57 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-using PCPM.Application.D158000;
+<script>
+    const pcpmForm = document.getElementById("pcpmForm");
 
-namespace PCPM.Pages;
+    // Legacy PCPM behavior:
+    // Pressing ENTER in any text field performs the normal POST.
+    pcpmForm.addEventListener("keydown", function (event) {
 
-public class D158000Model : PageModel
-{
-    private readonly ID158000Service _service;
+        if (event.key === "Enter" &&
+            event.target.matches('input[type="text"]')) {
 
-    public D158000Model(ID158000Service service)
-    {
-        _service = service;
-    }
+            event.preventDefault();
 
-    [BindProperty]
-    public string? Action { get; set; }
+            // Submit the form WITHOUT a named Razor handler.
+            // This calls OnPostAsync().
+            pcpmForm.requestSubmit();
+        }
+    });
 
-    [BindProperty]
-    public string? JobNumber { get; set; }
+    // Convert entered values to uppercase.
+    document.addEventListener("input", function (event) {
 
-    [BindProperty]
-    public string? FA { get; set; }
+        if (event.target.tagName === "INPUT" &&
+            event.target.type === "text") {
 
-    [BindProperty]
-    public string? JobSequence { get; set; }
+            event.target.value =
+                event.target.value.toUpperCase();
+        }
+    });
 
-    [BindProperty]
-    public string? Selection1 { get; set; }
+    // Preserve legacy function-key behavior.
+    document.addEventListener("keydown", function (event) {
 
-    [BindProperty]
-    public string? Selection2 { get; set; }
+        if (event.key === "F1") {
+            event.preventDefault();
 
-    [BindProperty]
-    public string? Selection3 { get; set; }
-
-    [BindProperty]
-    public string? Selection4 { get; set; }
-
-    [BindProperty]
-    public string? Selection5 { get; set; }
-
-    [BindProperty]
-    public string? Selection6 { get; set; }
-
-    public string? ErrorMessage { get; set; }
-
-    public string DisplayDate =>
-        DateTime.Now.ToString("MM/dd/yyyy");
-
-    public void OnGet()
-    {
-    }
-
-    // Main ENTER/Submit
-    public async Task<IActionResult> OnPostAsync()
-    {
-        var request = new D158000Request
-        {
-            Action = Action,
-            JobNumber = JobNumber,
-            FA = FA,
-            JobSequence = JobSequence,
-
-            Selection1 = Selection1,
-            Selection2 = Selection2,
-            Selection3 = Selection3,
-            Selection4 = Selection4,
-            Selection5 = Selection5,
-            Selection6 = Selection6
-        };
-
-        var result =
-            await _service.ProcessAsync(request);
-
-        if (!result.Success)
-        {
-            ErrorMessage = result.ErrorMessage;
-            return Page();
+            document.querySelector(
+                'button[formaction*="Help"]'
+            )?.click();
         }
 
-        // Temporary until destination pages exist
-        ErrorMessage =
-            $"Navigation accepted. Next screen: {result.NextScreen}";
+        if (event.key === "F3") {
+            event.preventDefault();
 
-        return Page();
+            document.querySelector(
+                'button[formaction*="Previous"]'
+            )?.click();
+        }
 
-        // Later:
-        // return RedirectToPage($"/{result.NextScreen}");
-    }
+        if (event.key === "F6") {
+            event.preventDefault();
 
-    // F1
-    public IActionResult OnPostHelp()
-    {
-        ErrorMessage =
-            "ENTER 'S' NEXT TO ONE MENU OPTION AND PRESS ENTER.";
-
-        return Page();
-    }
-
-    // F3
-    public IActionResult OnPostPrevious()
-    {
-        ErrorMessage = "NO PREVIOUS SCREEN.";
-
-        return Page();
-    }
-
-    // F6
-    public IActionResult OnPostReset()
-    {
-        return RedirectToPage("/D158000");
-    }
-}
+            document.querySelector(
+                'button[formaction*="Reset"]'
+            )?.click();
+        }
+    });
+</script>
