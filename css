@@ -1,0 +1,291 @@
+:root {
+    --pcpm-background: #F2F3FF;
+    --pcpm-text: #000000;
+    --pcpm-input: #ffffff;
+    --pcpm-readonly: #d3d3d3;
+    --pcpm-focus: #fff59d;
+    --pcpm-border: #777777;
+    --pcpm-error: #c00000;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    background-color: var(--pcpm-background);
+}
+
+body,
+input,
+button {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--pcpm-text);
+}
+
+.pcpm-screen {
+    width: 1000px;
+    min-height: 650px;
+    margin: 18px auto 0 auto;
+    box-sizing: border-box;
+}
+
+.pcpm-form {
+    margin: 0;
+    padding: 0;
+}
+
+/* ---------------------------------------------------------
+   HEADER
+   --------------------------------------------------------- */
+
+.pcpm-header-row {
+    display: grid;
+    grid-template-columns: 180px 1fr 180px;
+    align-items: center;
+    min-height: 28px;
+}
+
+.pcpm-header-left {
+    text-align: left;
+}
+
+.pcpm-header-center {
+    text-align: center;
+}
+
+.pcpm-header-right {
+    text-align: right;
+}
+
+.pcpm-screen-title {
+    text-align: center;
+}
+
+.pcpm-separator {
+    border-top: 2px solid #555;
+    margin: 6px 0 14px 0;
+}
+
+/* ---------------------------------------------------------
+   INPUTS
+   --------------------------------------------------------- */
+
+.pcpm-input {
+    height: 24px;
+    box-sizing: border-box;
+    padding: 0 3px;
+
+    font-family: "Courier New", Courier, monospace;
+    font-size: 16px;
+    font-weight: bold;
+
+    color: #000;
+    background-color: var(--pcpm-input);
+
+    border: 2px inset #ddd;
+    outline: none;
+
+    text-transform: uppercase;
+}
+
+.pcpm-input:focus {
+    background-color: var(--pcpm-focus);
+    outline: 1px solid #555;
+}
+
+.pcpm-input[readonly] {
+    background-color: var(--pcpm-readonly);
+}
+
+.pcpm-input-1 {
+    width: 24px;
+    text-align: center;
+}
+
+.pcpm-input-2 {
+    width: 38px;
+}
+
+.pcpm-input-3 {
+    width: 48px;
+}
+
+.pcpm-input-job {
+    width: 130px;
+}
+
+/* ---------------------------------------------------------
+   MESSAGE
+   --------------------------------------------------------- */
+
+.pcpm-error {
+    min-height: 24px;
+    margin-top: 8px;
+    color: var(--pcpm-error);
+}
+
+/* ---------------------------------------------------------
+   FUNCTION KEYS
+   --------------------------------------------------------- */
+
+.pcpm-function-keys {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+
+    margin-top: 10px;
+}
+
+.pcpm-function-button {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 16px;
+    font-weight: bold;
+
+    background: var(--pcpm-background);
+    border: none;
+    padding: 0;
+    margin: 0;
+
+    cursor: pointer;
+}
+
+.pcpm-function-button:hover,
+.pcpm-function-button:focus {
+    text-decoration: underline;
+    outline: none;
+}
+
+.pcpm-hidden-submit {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+}
+
+/* =========================================================
+   D158100
+   ========================================================= */
+
+.d158100-context {
+    display: grid;
+
+    grid-template-columns:
+        115px 135px
+        30px 50px
+        110px 100px;
+
+    justify-content: center;
+    align-items: center;
+
+    column-gap: 8px;
+
+    margin: 12px 0 8px 0;
+}
+
+.d158100-menu-header,
+.d158100-menu-row {
+    display: grid;
+
+    grid-template-columns:
+        45px
+        50px
+        50px
+        380px
+        180px;
+
+    align-items: center;
+}
+
+.d158100-menu-header {
+    margin-left: 65px;
+    min-height: 28px;
+}
+
+.d158100-menu-row {
+    margin-left: 65px;
+    min-height: 31px;
+}
+
+.d158100-instruction {
+    margin-top: 10px;
+    margin-left: 165px;
+}
+
+/* =========================================================
+   D158500
+   ========================================================= */
+
+.d158500-job-row {
+    display: grid;
+
+    grid-template-columns:
+        120px
+        130px
+        60px
+        1fr;
+
+    align-items: center;
+
+    margin: 8px 0 18px 0;
+}
+
+.d158500-summary-row {
+    display: grid;
+
+    grid-template-columns:
+        30px
+        35px
+        150px
+        170px
+        70px
+        90px
+        190px
+        70px;
+
+    align-items: center;
+
+    margin-bottom: 10px;
+}
+
+.d158500-table-header,
+.d158500-table-row {
+    display: grid;
+
+    grid-template-columns:
+        50px
+        180px
+        60px
+        110px
+        110px
+        110px
+        120px
+        60px;
+
+    align-items: center;
+}
+
+.d158500-table-header {
+    min-height: 28px;
+}
+
+.d158500-table-row {
+    min-height: 30px;
+}
+
+.d158500-remark-row {
+    display: grid;
+
+    grid-template-columns:
+        30px
+        130px
+        1fr
+        130px;
+
+    align-items: center;
+
+    margin-top: 16px;
+}
