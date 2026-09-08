@@ -1,3 +1,252 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+
+namespace PCPM.Pages;
+
+public class D158950Model : PageModel
+{
+    [BindProperty]
+    public string Command { get; set; } = string.Empty;
+
+    [BindProperty]
+    public string Action { get; set; } = string.Empty;
+
+    [BindProperty]
+    public string History { get; set; } = "N";
+
+    [BindProperty]
+    public List<D158950RemarkRow> Rows { get; set; } = new();
+
+    public string JobNumber { get; set; } = string.Empty;
+    public string JobName { get; set; } = string.Empty;
+    public string DateText { get; set; } = string.Empty;
+    public string ErrorMessage { get; set; } = string.Empty;
+
+    public void OnGet()
+    {
+        SetCurrentScreen();
+
+        DateText = DateTime.Now.ToString("MM/dd/yyyy");
+
+        JobNumber =
+            HttpContext.Session.GetString("JobNumber") ?? string.Empty;
+
+        JobName =
+            HttpContext.Session.GetString("JobName") ?? string.Empty;
+
+        BuildRows();
+    }
+
+    public IActionResult OnPost()
+    {
+        DateText = DateTime.Now.ToString("MM/dd/yyyy");
+
+        JobNumber =
+            HttpContext.Session.GetString("JobNumber") ?? string.Empty;
+
+        JobName =
+            HttpContext.Session.GetString("JobName") ?? string.Empty;
+
+        EnsureRows();
+
+        Action = Upper(Action);
+        History = Upper(History);
+
+        foreach (var row in Rows)
+            row.Selection = Upper(row.Selection);
+
+        switch (Upper(Command))
+        {
+            case "F1":
+                return RedirectToPage(
+                    "/D158999",
+                    new { screen = "950" });
+
+            case "F3":
+                return PreviousPage();
+
+            case "F6":
+                Action = string.Empty;
+                History = "N";
+
+                foreach (var row in Rows)
+                    row.Selection = string.Empty;
+
+                ModelState.Clear();
+                return Page();
+
+            case "F12":
+                return RedirectToPage("/D158000");
+
+            case "F4":
+                ErrorMessage =
+                    "SCROLL BACKWARD LOGIC WILL BE CONNECTED TO THE REMARK SERVICE.";
+                return Page();
+
+            case "F5":
+                ErrorMessage =
+                    "SCROLL FORWARD LOGIC WILL BE CONNECTED TO THE REMARK SERVICE.";
+                return Page();
+
+            case "F7":
+                ErrorMessage =
+                    "BACKWARD BROWSE WILL BE CONNECTED TO THE REMARK SERVICE.";
+                return Page();
+
+            case "F8":
+                ErrorMessage =
+                    "FORWARD BROWSE WILL BE CONNECTED TO THE REMARK SERVICE.";
+                return Page();
+        }
+
+        if (History != "Y" && History != "N")
+        {
+            ErrorMessage = "HISTORY MUST BE Y OR N.";
+            return Page();
+        }
+
+        var selectedRows =
+            Rows.Where(x =>
+                    !string.IsNullOrWhiteSpace(x.Selection))
+                .ToList();
+
+        if (!string.IsNullOrWhiteSpace(Action) &&
+            selectedRows.Count > 0)
+        {
+            ErrorMessage = "NAVIGATION CONFLICT.";
+            return Page();
+        }
+
+        if (selectedRows.Count > 1)
+        {
+            ErrorMessage = "SELECT ONLY ONE REMARK.";
+            return Page();
+        }
+
+        if (selectedRows.Count == 1)
+        {
+            var row = selectedRows[0];
+
+            if (row.Selection is not ("A" or "D" or "U"))
+            {
+                ErrorMessage =
+                    "ENTER 'A' 'D' OR 'U' IN THE SELECTION FIELD.";
+
+                return Page();
+            }
+
+            /*
+             * The supplied D158950 ASPX.CBL contains WebForms/PCIM
+             * screen plumbing but not the underlying business COBOL
+             * which determines the target screens.
+             *
+             * Wire the actual A/D/U remark routing here when that
+             * business program is available.
+             */
+
+            ErrorMessage =
+                $"REMARK {row.Selection} PROCESSING HAS NOT YET BEEN WIRED.";
+
+            return Page();
+        }
+
+        return Page();
+    }
+
+    private void BuildRows()
+    {
+        Rows = Enumerable
+            .Range(0, 13)
+            .Select(_ => new D158950RemarkRow())
+            .ToList();
+
+        /*
+         * Replace with repository/service call.
+         *
+         * Example:
+         *
+         * var remarks =
+         *     await _remarkService.GetRemarksAsync(
+         *         JobNumber,
+         *         History == "Y");
+         *
+         * Rows = remarks.Take(13)...
+         */
+    }
+
+    private void EnsureRows()
+    {
+        Rows ??= new List<D158950RemarkRow>();
+
+        while (Rows.Count < 13)
+            Rows.Add(new D158950RemarkRow());
+
+        if (Rows.Count > 13)
+            Rows = Rows.Take(13).ToList();
+    }
+
+    private static string Upper(string? value)
+    {
+        return (value ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+    }
+
+    private void SetCurrentScreen()
+    {
+        var current =
+            HttpContext.Session.GetString("CurrentScreen");
+
+        if (!string.IsNullOrWhiteSpace(current) &&
+            !string.Equals(
+                current,
+                "D158950",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            HttpContext.Session.SetString(
+                "PreviousScreen",
+                current);
+        }
+
+        HttpContext.Session.SetString(
+            "CurrentScreen",
+            "D158950");
+    }
+
+    private IActionResult PreviousPage()
+    {
+        var previous =
+            HttpContext.Session.GetString("PreviousScreen");
+
+        if (string.IsNullOrWhiteSpace(previous))
+            return RedirectToPage("/D158000");
+
+        return RedirectToPage(
+            "/" + previous.Trim().TrimStart('/'));
+    }
+}
+
+public class D158950RemarkRow
+{
+    public string Selection { get; set; } = string.Empty;
+
+    public string Remark { get; set; } = string.Empty;
+
+    public string LastUpdated { get; set; } = string.Empty;
+
+    public string FunctionalArea { get; set; } = string.Empty;
+
+    public string RemarkType { get; set; } = string.Empty;
+
+    public string UserId { get; set; } = string.Empty;
+}
+
+
+
+
+
+
 @page
 @model PCPM.Pages.D158950Model
 
