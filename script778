@@ -1,16 +1,17 @@
 @page
-@model PCPM.Pages.D158945Model
+@model PCPM.Pages.D158999Model
 
 @{
     Layout = null;
-    ViewData["Title"] = "D158945";
+    ViewData["Title"] = "D158999";
 }
 
 <!DOCTYPE html>
 <html>
 <head>
+
     <meta charset="utf-8" />
-    <title>D158945</title>
+    <title>D158999</title>
 
     <link rel="stylesheet"
           href="~/css/pcpm-terminal.css"
@@ -18,51 +19,16 @@
 
     <style>
 
-        .line {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            min-height: 25px;
-        }
-
-        .data-grid {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-        }
-
-        .data-grid th,
-        .data-grid td {
-            padding: 3px 4px;
-            height: 25px;
-            text-align: left;
-            white-space: nowrap;
-        }
-
-        .funding-table {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-        }
-
-        .funding-table th,
-        .funding-table td {
-            padding: 3px;
-            height: 25px;
-            text-align: left;
-            white-space: nowrap;
-        }
-
-        .funding-value {
-            width: 120px;
-        }
-
-        .readonly-value {
-            min-width: 45px;
-            display: inline-block;
+        .help-text {
+            white-space: pre;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 16px;
+            font-weight: 700;
+            line-height: 1.55;
         }
 
     </style>
+
 </head>
 
 <body>
@@ -76,29 +42,19 @@
     <div class="header-grid">
 
         <div>
-
-            <div class="field-group">
-                <span>ACTION</span>
-
-                <input asp-for="Action"
-                       maxlength="3"
-                       class="terminal-dynamic-input action"
-                       autofocus />
-            </div>
-
+            <div>ACTION</div>
             <div class="screen-row">
-                SCREEN&nbsp;&nbsp;&nbsp;945
+                SCREEN&nbsp;&nbsp;&nbsp;999
             </div>
-
         </div>
 
         <div class="header-center">
-            <div>ARDOT PCPM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(PROJECT STATUS MODULE)</div>
-            <div>PROJECT STATUS DELETE</div>
+            <div>ARDOT PRE-CONSTRUCTION PROJECT MONITORING</div>
+            <div>HELP FOR PANEL @Model.HelpScreen</div>
         </div>
 
         <div class="header-right">
-            <div>D158945</div>
+            <div>D158999</div>
             <div>@Model.DateText</div>
         </div>
 
@@ -106,287 +62,59 @@
 
     <div class="separator"></div>
 
-    <div class="line">
+    <div class="input-row">
 
-        <span>JOB NO</span>
+        <span>JOBNO</span>
+        <span>@Model.JobNumber</span>
 
-        <input asp-for="JobNumber"
-               readonly
-               class="terminal-dynamic-input job-number"
-               style="background:lightgray;" />
-
-        <span>SEQ</span>
+        <span>JOB SEQUENCE</span>
         <span>@Model.JobSequence</span>
 
-        <span>NAME</span>
-        <span>@Model.JobName</span>
+        <span>FUNCTIONAL AREA</span>
+        <span>@Model.FunctionalArea</span>
+
+        <span>@Model.FunctionalAreaAuthority</span>
+
+        <span>USERID</span>
+        <span>@Model.UserId</span>
 
     </div>
 
-    <div class="line">
-        ENTER 'D' OR ' ' IN DELFLAG TO DELETE OR UNDELETE THE SPECIFIED RECORD SET
-    </div>
+<pre class="help-text">
+--------------------------ACTION CODE ENTRIES--------------------------------
+'SO' TO SIGN OFF   OR                 'NNN' (VALID PANEL NUMBER) FOR DIRECT NAVIGATION
 
-    <div class="line">
+------------------------SELECTION FIELD ENTRIES------------------------------
+'A' SELECT FOR ADD                            'D' SELECT FOR DELETE
+'U' SELECT FOR UPDATE (FA ACCESS REQUIRED)    'I' SELECT FOR INQUIRY
+'S' SELECT FOR OTHER ACTION
 
-        <span>REC TYPE</span>
-        <span class="readonly-value">@Model.RecordType</span>
-
-        <span>@Model.TypeConversion</span>
-
-        <span style="margin-left:40px;">REF JOB#</span>
-        <span>@Model.ReferenceJobNumber</span>
-
-        <span style="margin-left:auto;">JOB DELFLAG</span>
-
-        <input asp-for="JobDeleteFlag"
-               maxlength="1"
-               class="terminal-dynamic-input selection-box" />
-
-    </div>
-
-    <div class="line">
-
-        <span>MIN ORD</span>
-        <span>@Model.MinimumOrder</span>
-
-        <span>DATE</span>
-        <span>@Model.MinimumMonth</span>
-        <span>@Model.MinimumYear</span>
-
-        <span>LET DATE</span>
-        <span>@Model.LetMonth</span>
-        <span>@Model.LetYear</span>
-
-        <span>WORK ORD</span>
-        <span>@Model.WorkMonth</span>
-        <span>@Model.WorkYear</span>
-
-        <span>COMP</span>
-        <span>@Model.CompleteMonth</span>
-        <span>@Model.CompleteYear</span>
-
-    </div>
-
-    <div class="line">
-
-        <span>BASIC DELFLAG</span>
-
-        <input asp-for="BasicDeleteFlag"
-               maxlength="1"
-               class="terminal-dynamic-input selection-box" />
-
-        <span style="margin-left:55px;">SEL-CODE</span>
-        <span>@Model.SelectCode</span>
-
-    </div>
-
-    <table class="data-grid">
-
-        <thead>
-            <tr>
-                <th>DIST</th>
-                <th>CO</th>
-                <th>RTE</th>
-                <th>SEC</th>
-                <th>LOG MILE</th>
-                <th>LENGTH</th>
-                <th>CLASS</th>
-                <th>POP</th>
-                <th>WORK</th>
-                <th>FAS</th>
-                <th>LOC</th>
-                <th>STATUS</th>
-            </tr>
-        </thead>
-
-        <tbody>
-            <tr>
-                <td>@Model.District</td>
-                <td>@Model.County</td>
-                <td>@Model.Route</td>
-                <td>@Model.Section</td>
-                <td>@Model.LogMile</td>
-                <td>@Model.Length</td>
-                <td>@Model.FunctionalClass</td>
-                <td>@Model.PopulationGroup</td>
-                <td>@Model.WorkType</td>
-                <td>@Model.Fas</td>
-                <td>@Model.Location</td>
-                <td>@Model.Status</td>
-            </tr>
-        </tbody>
-
-    </table>
-
-    <div class="line">
-        ---ENTER 'D' OR ' ' IN THE 'DF' FIELD TO DELETE OR UNDELETE THE FUND REC.----
-    </div>
-
-    <table class="funding-table">
-
-        <thead>
-            <tr>
-                <th>TYPE</th>
-
-                <th>FUNDING</th>
-                <th>CODE</th>
-                <th>DF</th>
-
-                <th>FUNDING</th>
-                <th>CODE</th>
-                <th>DF</th>
-
-                <th>FUNDING</th>
-                <th>CODE</th>
-                <th>DF</th>
-
-                <th>TOTAL FUNDING</th>
-            </tr>
-        </thead>
-
-        <tbody>
-
-            @for (var r = 0; r < Model.FundingRows.Count; r++)
-            {
-                <tr>
-
-                    <td>@Model.FundingRows[r].Type</td>
-
-                    @for (var s = 0; s < 3; s++)
-                    {
-                        <td class="funding-value">
-                            @Model.FundingRows[r].Slots[s].Amount
-                        </td>
-
-                        <td>
-                            @Model.FundingRows[r].Slots[s].Code
-                        </td>
-
-                        <td>
-                            <input asp-for="FundingRows[r].Slots[s].DeleteFlag"
-                                   maxlength="1"
-                                   class="terminal-dynamic-input selection-box" />
-                        </td>
-                    }
-
-                    <td>
-                        @Model.FundingRows[r].Total
-                    </td>
-
-                </tr>
-            }
-
-        </tbody>
-
-    </table>
-
-    <div class="line"
-         style="justify-content:flex-end; margin-top:8px;">
-
-        <span>PROGRAMMED CONSTRUCTION AMOUNT</span>
-        <span>@Model.ProgramAmount</span>
-
-    </div>
-
-    <div class="separator"></div>
-
-    <div class="line">
-        <span>HIP</span>
-        <span style="margin-left:25px;">1991</span>
-        <span style="margin-left:100px;">PPC DATE</span>
-        <span style="margin-left:35px;">PROG</span>
-        <span>SPEC</span>
-        <span style="margin-left:70px;">LET</span>
-        <span style="margin-left:75px;">FINAL CONST</span>
-    </div>
-
-    <div class="line">
-        <span>WORK</span>
-        <span style="margin-left:18px;">HIP</span>
-        <span style="margin-left:15px;">PRIORITY</span>
-        <span style="margin-left:18px;">MO YEAR</span>
-        <span>CODE</span>
-        <span>AREA</span>
-        <span style="margin-left:45px;">AMOUNT</span>
-        <span style="margin-left:75px;">AMOUNT</span>
-    </div>
-
-    <div class="line">
-
-        <span>@Model.HipWork</span>
-        <span style="margin-left:25px;">@Model.Hip91</span>
-        <span style="margin-left:30px;">@Model.Priority</span>
-
-        <span style="margin-left:35px;">@Model.PpcMonth</span>
-        <span>@Model.PpcYear</span>
-
-        <span style="margin-left:30px;">@Model.ProgramFunding</span>
-        <span>@Model.Special</span>
-
-        <span style="margin-left:30px;">@Model.BidAmount</span>
-        <span>@Model.FinalConstructionAmount</span>
-
-    </div>
+------------------------PROGRAM FUNCTION KEYS--------------------------------
+ F1   CALL HELP PANEL                  F2   NOT USED
+ F3   GO TO PREVIOUS PANEL             F4   SCROLL LINES BACKWARD
+ F5   SCROLL LINES FORWARD             F6   RESET FIELDS ON CURRENT PANEL
+ F7   PAGE BACKWARD IN THE FILE        F8   PAGE FORWARD IN THE FILE
+ F9   NOT USED                         F10  NOT USED
+ F11  NOT USED                         F12  RETURN TO MAIN MENU
+PF13  THRU  PF24 NOT USED
+-----------------------------------------------------------------------------
+</pre>
 
     <div class="function-keys">
 
         <button type="submit"
                 class="function-button"
-                onclick="setCommand('F1')">
-            F1=HELP
-        </button>
-
-        <button type="submit"
-                class="function-button"
                 onclick="setCommand('F3')">
-            F3=PREV
-        </button>
-
-        <button type="submit"
-                class="function-button"
-                onclick="setCommand('F4')">
-            F4=SCRLB
-        </button>
-
-        <button type="submit"
-                class="function-button"
-                onclick="setCommand('F5')">
-            F5=SCRLF
-        </button>
-
-        <button type="submit"
-                class="function-button"
-                onclick="setCommand('F6')">
-            F6=RESET
-        </button>
-
-        <button type="submit"
-                class="function-button"
-                onclick="setCommand('F7')">
-            F7=BKWRD
-        </button>
-
-        <button type="submit"
-                class="function-button"
-                onclick="setCommand('F8')">
-            F8=FRWRD
+            F3=PREVIOUS
         </button>
 
         <button type="submit"
                 class="function-button"
                 onclick="setCommand('F12')">
-            F12=MAIN
+            F12=MAIN MENU
         </button>
 
     </div>
-
-    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-    {
-        <div class="message">
-            @Model.ErrorMessage
-        </div>
-    }
 
 </form>
 
@@ -395,27 +123,14 @@
 <script>
 
     function setCommand(command) {
-        document.getElementById("Command").value = command;
+        document.getElementById("Command").value =
+            command;
     }
-
-    document.addEventListener("input", function (event) {
-
-        if (event.target.tagName === "INPUT" &&
-            event.target.type === "text") {
-
-            event.target.value =
-                event.target.value.toUpperCase();
-        }
-
-    });
 
     document.addEventListener("keydown", function (event) {
 
-        const keys =
-            ["F1", "F3", "F4", "F5",
-             "F6", "F7", "F8", "F12"];
-
-        if (!keys.includes(event.key))
+        if (event.key !== "F3" &&
+            event.key !== "F12")
             return;
 
         event.preventDefault();
@@ -424,6 +139,7 @@
             event.key;
 
         document.getElementById("pcpmForm").submit();
+
     });
 
 </script>
@@ -432,94 +148,62 @@
 </html>
 
 
+
+
+
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace PCPM.Pages;
 
-public class D158945Model : PageModel
+public class D158999Model : PageModel
 {
     [BindProperty]
     public string Command { get; set; } = string.Empty;
 
-    [BindProperty]
-    public string Action { get; set; } = string.Empty;
-
-    [BindProperty]
-    public string JobNumber { get; set; } = string.Empty;
-
-    [BindProperty]
-    public string JobDeleteFlag { get; set; } = string.Empty;
-
-    [BindProperty]
-    public string BasicDeleteFlag { get; set; } = string.Empty;
-
-    [BindProperty]
-    public List<D158945FundingRow> FundingRows { get; set; } = new();
-
     public string DateText { get; set; } = string.Empty;
 
+    public string HelpScreen { get; set; } = string.Empty;
+
+    public string JobNumber { get; set; } = string.Empty;
+
     public string JobSequence { get; set; } = string.Empty;
-    public string JobName { get; set; } = string.Empty;
 
-    public string RecordType { get; set; } = string.Empty;
-    public string TypeConversion { get; set; } = string.Empty;
-    public string ReferenceJobNumber { get; set; } = string.Empty;
+    public string FunctionalArea { get; set; } = string.Empty;
 
-    public string MinimumOrder { get; set; } = string.Empty;
-    public string MinimumMonth { get; set; } = string.Empty;
-    public string MinimumYear { get; set; } = string.Empty;
+    public string FunctionalAreaAuthority { get; set; } =
+        string.Empty;
 
-    public string LetMonth { get; set; } = string.Empty;
-    public string LetYear { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
 
-    public string WorkMonth { get; set; } = string.Empty;
-    public string WorkYear { get; set; } = string.Empty;
-
-    public string CompleteMonth { get; set; } = string.Empty;
-    public string CompleteYear { get; set; } = string.Empty;
-
-    public string SelectCode { get; set; } = string.Empty;
-
-    public string District { get; set; } = string.Empty;
-    public string County { get; set; } = string.Empty;
-    public string Route { get; set; } = string.Empty;
-    public string Section { get; set; } = string.Empty;
-
-    public string LogMile { get; set; } = string.Empty;
-    public string Length { get; set; } = string.Empty;
-
-    public string FunctionalClass { get; set; } = string.Empty;
-    public string PopulationGroup { get; set; } = string.Empty;
-    public string WorkType { get; set; } = string.Empty;
-    public string Fas { get; set; } = string.Empty;
-    public string Location { get; set; } = string.Empty;
-    public string Status { get; set; } = string.Empty;
-
-    public string ProgramAmount { get; set; } = string.Empty;
-
-    public string HipWork { get; set; } = string.Empty;
-    public string Hip91 { get; set; } = string.Empty;
-    public string Priority { get; set; } = string.Empty;
-
-    public string PpcMonth { get; set; } = string.Empty;
-    public string PpcYear { get; set; } = string.Empty;
-
-    public string ProgramFunding { get; set; } = string.Empty;
-    public string Special { get; set; } = string.Empty;
-
-    public string BidAmount { get; set; } = string.Empty;
-    public string FinalConstructionAmount { get; set; } = string.Empty;
-
-    public string ErrorMessage { get; set; } = string.Empty;
-
-    public void OnGet()
+    public void OnGet(string? screen = null)
     {
-        SetCurrentScreen();
+        var previousCurrent =
+            HttpContext.Session.GetString("CurrentScreen");
+
+        if (!string.IsNullOrWhiteSpace(previousCurrent) &&
+            !string.Equals(
+                previousCurrent,
+                "D158999",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            HttpContext.Session.SetString(
+                "PreviousScreen",
+                previousCurrent);
+        }
+
+        HttpContext.Session.SetString(
+            "CurrentScreen",
+            "D158999");
 
         DateText =
             DateTime.Now.ToString("MM/dd/yyyy");
+
+        HelpScreen =
+            NormalizeScreen(screen)
+            ?? NormalizeScreen(previousCurrent)
+            ?? string.Empty;
 
         JobNumber =
             HttpContext.Session.GetString("JobNumber")
@@ -529,204 +213,64 @@ public class D158945Model : PageModel
             HttpContext.Session.GetString("JobSequence")
             ?? string.Empty;
 
-        JobName =
-            HttpContext.Session.GetString("JobName")
+        FunctionalArea =
+            HttpContext.Session.GetString("FunctionalArea")
             ?? string.Empty;
 
-        BuildFundingRows();
+        FunctionalAreaAuthority =
+            HttpContext.Session.GetString(
+                "FunctionalAreaAuthority")
+            ?? string.Empty;
 
-        LoadRecord();
+        var identity =
+            User?.Identity?.Name ?? string.Empty;
+
+        if (identity.Contains('\\'))
+        {
+            UserId =
+                identity[
+                    (identity.LastIndexOf('\\') + 1)..];
+        }
+        else
+        {
+            UserId = identity;
+        }
     }
 
     public IActionResult OnPost()
     {
-        DateText =
-            DateTime.Now.ToString("MM/dd/yyyy");
-
-        JobSequence =
-            HttpContext.Session.GetString("JobSequence")
-            ?? string.Empty;
-
-        JobName =
-            HttpContext.Session.GetString("JobName")
-            ?? string.Empty;
-
-        EnsureFundingRows();
-
-        Action = Upper(Action);
-        JobDeleteFlag = Upper(JobDeleteFlag);
-        BasicDeleteFlag = Upper(BasicDeleteFlag);
-
-        foreach (var row in FundingRows)
+        switch (
+            (Command ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant())
         {
-            foreach (var slot in row.Slots)
-            {
-                slot.DeleteFlag =
-                    Upper(slot.DeleteFlag);
-            }
-        }
-
-        switch (Upper(Command))
-        {
-            case "F1":
-                return RedirectToPage(
-                    "/D158999",
-                    new { screen = "945" });
-
-            case "F3":
-                return PreviousPage();
-
-            case "F6":
-
-                Action = string.Empty;
-                JobDeleteFlag = string.Empty;
-                BasicDeleteFlag = string.Empty;
-
-                foreach (var row in FundingRows)
-                {
-                    foreach (var slot in row.Slots)
-                        slot.DeleteFlag = string.Empty;
-                }
-
-                ModelState.Clear();
-
-                LoadRecord();
-
-                return Page();
-
             case "F12":
                 return RedirectToPage("/D158000");
 
-            case "F4":
-            case "F5":
-            case "F7":
-            case "F8":
-
-                ErrorMessage =
-                    "BROWSE/SCROLL LOGIC HAS NOT YET BEEN CONNECTED.";
-
-                return Page();
-        }
-
-        if (!ValidDeleteFlag(JobDeleteFlag))
-        {
-            ErrorMessage =
-                "JOB DELFLAG MUST BE 'D' OR BLANK.";
-
-            return Page();
-        }
-
-        if (!ValidDeleteFlag(BasicDeleteFlag))
-        {
-            ErrorMessage =
-                "BASIC DELFLAG MUST BE 'D' OR BLANK.";
-
-            return Page();
-        }
-
-        foreach (var row in FundingRows)
-        {
-            foreach (var slot in row.Slots)
-            {
-                if (!ValidDeleteFlag(slot.DeleteFlag))
-                {
-                    ErrorMessage =
-                        "FUNDING DF MUST BE 'D' OR BLANK.";
-
-                    return Page();
-                }
-            }
-        }
-
-        /*
-         * TODO:
-         *
-         * Pass these flags to an Application service which performs
-         * the actual D158945 delete/undelete transaction.
-         */
-
-        return Page();
-    }
-
-    private void LoadRecord()
-    {
-        /*
-         * TODO:
-         *
-         * Load the project status data from Infrastructure through
-         * an Application service.
-         *
-         * Do not place SQL directly in this PageModel.
-         */
-    }
-
-    private void BuildFundingRows()
-    {
-        FundingRows = new List<D158945FundingRow>
-        {
-            D158945FundingRow.Create("FD"),
-            D158945FundingRow.Create("ST"),
-            D158945FundingRow.Create("OT")
-        };
-    }
-
-    private void EnsureFundingRows()
-    {
-        FundingRows ??= new List<D158945FundingRow>();
-
-        var types = new[] { "FD", "ST", "OT" };
-
-        while (FundingRows.Count < 3)
-        {
-            FundingRows.Add(
-                D158945FundingRow.Create(
-                    types[FundingRows.Count]));
-        }
-
-        if (FundingRows.Count > 3)
-            FundingRows = FundingRows.Take(3).ToList();
-
-        for (var i = 0; i < 3; i++)
-        {
-            FundingRows[i].Type = types[i];
-            FundingRows[i].EnsureSlots();
+            case "F3":
+            default:
+                return PreviousPage();
         }
     }
 
-    private static bool ValidDeleteFlag(string? value)
+    private string? NormalizeScreen(string? value)
     {
-        var flag = Upper(value);
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
 
-        return string.IsNullOrWhiteSpace(flag) ||
-               flag == "D";
-    }
+        var screen =
+            value.Trim().TrimStart('/');
 
-    private static string Upper(string? value)
-    {
-        return (value ?? string.Empty)
-            .Trim()
-            .ToUpperInvariant();
-    }
-
-    private void SetCurrentScreen()
-    {
-        var current =
-            HttpContext.Session.GetString("CurrentScreen");
-
-        if (!string.IsNullOrWhiteSpace(current) &&
-            !string.Equals(
-                current,
-                "D158945",
+        if (screen.StartsWith(
+                "D158",
                 StringComparison.OrdinalIgnoreCase))
         {
-            HttpContext.Session.SetString(
-                "PreviousScreen",
-                current);
+            screen = screen[4..];
         }
 
-        HttpContext.Session.SetString(
-            "CurrentScreen",
-            "D158945");
+        return screen.All(char.IsDigit)
+            ? screen
+            : null;
     }
 
     private IActionResult PreviousPage()
@@ -741,49 +285,4 @@ public class D158945Model : PageModel
             "/" + previous.Trim().TrimStart('/'));
     }
 }
-
-public class D158945FundingRow
-{
-    public string Type { get; set; } = string.Empty;
-
-    public List<D158945FundingSlot> Slots { get; set; } = new();
-
-    public string Total { get; set; } = string.Empty;
-
-    public static D158945FundingRow Create(string type)
-    {
-        return new D158945FundingRow
-        {
-            Type = type,
-
-            Slots = new List<D158945FundingSlot>
-            {
-                new(),
-                new(),
-                new()
-            }
-        };
-    }
-
-    public void EnsureSlots()
-    {
-        Slots ??= new List<D158945FundingSlot>();
-
-        while (Slots.Count < 3)
-            Slots.Add(new D158945FundingSlot());
-
-        if (Slots.Count > 3)
-            Slots = Slots.Take(3).ToList();
-    }
-}
-
-public class D158945FundingSlot
-{
-    public string Amount { get; set; } = string.Empty;
-
-    public string Code { get; set; } = string.Empty;
-
-    public string DeleteFlag { get; set; } = string.Empty;
-}
-
 
