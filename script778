@@ -1,9 +1,482 @@
-Quick update on today’s deployment activities.
+@page
+@model PCPM.Pages.D158000Model
 
-We were able to successfully deploy IDH, IMRR, and API. I reviewed the application logs after deployment, and everything is working as expected.
+@{
+    Layout = null;
+    ViewData["Title"] = "D158000";
+}
 
-For Disaster Recovery (DR), I manually updated the traffic in GCP to point to the newer Cloud Run revisions/images and verified that the DR services are now working as expected. The DR traffic update was the part that was causing the pipeline issue this morning. I have updated the pipeline configuration/code to handle the DR traffic update automatically, and those changes are now in the repository.
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-Additionally, I successfully completed the one-time Firestore scan/update job. The job added the three additional fields to the documents in the Firestore Employee collection as planned.
+    <title>D158000 - PCPM</title>
 
-At this point, the deployments, DR configuration, and Firestore update have all been completed successfully.
+    <style>
+        body {
+            margin: 0;
+            padding: 30px;
+            background-color: #F2F3FF;
+            color: #111;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .pcpm-screen {
+            max-width: 1000px;
+            margin: 0 auto;
+            font-weight: 700;
+        }
+
+        .header-grid {
+            display: grid;
+            grid-template-columns: 220px 1fr 180px;
+            align-items: start;
+            gap: 15px;
+        }
+
+        .header-center {
+            text-align: center;
+            font-weight: bold;
+            line-height: 1.8;
+        }
+
+        .header-right {
+            text-align: right;
+        }
+
+        .screen-row {
+            margin-top: 5px;
+        }
+
+        .separator {
+            border-top: 2px solid #555;
+            margin: 15px 0 20px 0;
+        }
+
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 28px;
+            flex-wrap: wrap;
+        }
+
+        .field-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pcpm-screen input[type="text"] {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 16px;
+            font-weight: 700;
+
+            padding: 4px 6px;
+            
+            color: #111;
+
+            border: 1px solid #666;
+            text-transform: uppercase;
+        }
+
+        .job-number {
+            width: 120px;
+        }
+
+        .fa {
+            width: 35px;
+        }
+
+        .job-seq {
+            width: 35px;
+        }
+
+        .action {
+            width: 45px;
+        }
+
+        .menu-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .menu-table th {
+            text-align: left;
+            padding: 8px 6px 16px 6px;
+        }
+
+        .menu-table td {
+            padding: 11px 6px;
+            vertical-align: middle;
+        }
+
+        .selection-box {
+            width: 28px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .select-column {
+            width: 100px;
+        }
+
+        .option-column {
+            width: 100px;
+        }
+
+        .panel-column {
+            width: 140px;
+        }
+
+        .instruction {
+            margin-top: 25px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .function-keys {
+            margin-top: 15px;
+            padding-top: 12px;
+            border-top: 2px solid #555;
+            display: flex;
+            gap: 25px;
+        }
+
+        /* 1. Standard Sunken Depth Input (Like the "ACTION" box) */
+        .terminal-dynamic-input {
+            /* Fonts and Layout */
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.1rem;
+            font-weight: bold;
+            padding: 6px 12px;
+            outline: none;
+            transition: background-color 0.1s ease;
+            /* 1. DEFAULT STATE: White background with a sunken 3D look */
+            background-color: #ffffff;
+            border-radius: 0 !important; /* Perfect straight sharp edges */
+            border-top: 2px solid #808080;
+            border-left: 2px solid #808080;
+            border-bottom: 2px solid #ffffff;
+            border-right: 2px solid #ffffff;
+            box-shadow: inset 1px 1px 0px #000000;
+        }
+
+            /* 2. ACTIVE TYPING STATE: Triggers automatically when clicked/focused */
+            .terminal-dynamic-input:focus {
+                /* Flashes yellow like the job number field in your original image */
+                background-color: #ffff00;
+                /* Switches to a clean, flat black border frame while typing */
+                /* Removes the inset 3D shadows during typing for a flat look */
+                box-shadow: none;
+            }
+
+        .function-button {
+            background: none;
+            border: none;
+            padding: 0;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .submit-row {
+            margin-top: 25px;
+            text-align: center;
+        }
+
+        .submit-button {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 16px;
+            padding: 8px 28px;
+            cursor: pointer;
+        }
+
+
+
+        .message {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #b00020;
+            color: #b00020;
+            font-weight: bold;
+        }
+
+        .validation-message {
+            color: #b00020;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="pcpm-screen">
+
+        <form method="post" asp-page="/D158000" id="pcpmForm">
+
+            <!-- Header -->
+            <div class="header-grid">
+
+                <div>
+                    <div class="field-group">
+                        <label asp-for="Action">ACTION</label>
+                        <input asp-for="Action"
+                               class="action terminal-dynamic-input"
+                               maxlength="3"
+                               autocomplete="off" />
+                    </div>
+
+                    <div class="screen-row">
+                        SCREEN&nbsp;&nbsp;000
+                    </div>
+                </div>
+
+                <div class="header-center">
+                    <div>ARDOT PRE-CONSTRUCTION PROJECT MONITORING</div>
+                    <div>MAIN MENU</div>
+                </div>
+
+                <div class="header-right">
+                    <div>D158000</div>
+                    <div>@Model.DisplayDate</div>
+                </div>
+
+            </div>
+
+            <div class="separator"></div>
+
+            <!-- Job Information -->
+            <div class="input-row">
+
+                <div class="field-group">
+                    <label asp-for="JobNumber">JOB NUMBER</label>
+
+                    <input asp-for="JobNumber"
+                           class="job-number terminal-dynamic-input"
+                           maxlength="10"
+                           autocomplete="off" />
+                </div>
+
+                <div class="field-group">
+                    <label asp-for="FA">FA</label>
+
+                    <input asp-for="FA"
+                           class="fa terminal-dynamic-input"
+                           maxlength="2"
+                           autocomplete="off" />
+                </div>
+
+                <div class="field-group">
+                    <label asp-for="JobSequence">JOB SEQ</label>
+
+                    <input asp-for="JobSequence"
+                           class="job-seq terminal-dynamic-input"
+                           maxlength="2"
+                           autocomplete="off" />
+                </div>
+
+            </div>
+
+            <!-- Main Menu -->
+            <table class="menu-table">
+
+                <thead>
+                    <tr>
+                        <th class="select-column">SELECT</th>
+                        <th class="option-column">OPTION</th>
+                        <th>TITLE</th>
+                        <th class="panel-column">PANEL NO.</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    <tr>
+                        <td>
+                            <input asp-for="Selection1"
+                                   class="selection-box terminal-dynamic-input"
+                                   maxlength="1"
+                                   autocomplete="off" />
+                        </td>
+
+                        <td>1.</td>
+                        <td>JOB STATUS SUMMARY</td>
+                        <td>500</td>
+                    </tr>
+
+                    <tr>
+                        <td>
+                            <input asp-for="Selection2"
+                                   class="selection-box terminal-dynamic-input"
+                                   maxlength="1"
+                                   autocomplete="off" />
+                        </td>
+
+                        <td>2.</td>
+                        <td>JOB MAINTENANCE MENU</td>
+                        <td>100</td>
+                    </tr>
+
+                    <tr>
+                        <td>
+                            <input asp-for="Selection3"
+                                   class="selection-box terminal-dynamic-input"
+                                   maxlength="1"
+                                   autocomplete="off" />
+                        </td>
+
+                        <td>3.</td>
+                        <td>JOB BROWSE SELECTION MENU</td>
+                        <td>700</td>
+                    </tr>
+
+                    <tr>
+                        <td>
+                            <input asp-for="Selection4"
+                                   class="selection-box terminal-dynamic-input"
+                                   maxlength="1"
+                                   autocomplete="off" />
+                        </td>
+
+                        <td>4.</td>
+                        <td>CONSTRUCTION MAINTENANCE MENU</td>
+                        <td>900</td>
+                    </tr>
+
+                    <tr>
+                        <td>
+                            <input asp-for="Selection5"
+                                   class="selection-box terminal-dynamic-input"
+                                   maxlength="1"
+                                   autocomplete="off" />
+                        </td>
+
+                        <td>5.</td>
+                        <td>SECURITY MAINTENANCE SCREEN</td>
+                        <td>010</td>
+                    </tr>
+
+                    <tr>
+                        <td>
+                            <input asp-for="Selection6"
+                                   class="selection-box terminal-dynamic-input"
+                                   maxlength="1"
+                                   autocomplete="off" />
+                        </td>
+
+                        <td>6.</td>
+                        <td>STANDARD REMARK MAINTENANCE</td>
+                        <td>800</td>
+                    </tr>
+
+                </tbody>
+
+            </table>
+
+            <div class="instruction">
+                ENTER 'S' IN THE SELECTION FIELD, PRESS [ENTER]
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+            {
+                <div class="message">
+                    @Model.ErrorMessage
+                </div>
+            }
+
+            <div asp-validation-summary="ModelOnly"
+                 class="validation-message">
+            </div>
+
+            <div class="function-keys">
+
+                <button type="submit"
+                        asp-page-handler="Help"
+                        class="function-button">
+                    F1=HELP
+                </button>
+
+                <button type="submit"
+                        asp-page-handler="Previous"
+                        class="function-button">
+                    F3=PREVIOUS
+                </button>
+
+                <button type="submit"
+                        asp-page-handler="Reset"
+                        class="function-button">
+                    F6=RESET
+                </button>
+
+            </div>
+
+        </form>
+
+    </div>
+
+    <script>
+        const pcpmForm = document.getElementById("pcpmForm");
+
+        // Legacy PCPM behavior:
+        // Pressing ENTER in any text field performs the normal POST.
+        pcpmForm.addEventListener("keydown", function (event) {
+
+            if (event.key === "Enter" &&
+                event.target.matches('input[type="text"]')) {
+
+                event.preventDefault();
+
+                // Submit the form WITHOUT a named Razor handler.
+                // This calls OnPostAsync().
+                pcpmForm.requestSubmit();
+            }
+        });
+
+        // Convert entered values to uppercase.
+        document.addEventListener("input", function (event) {
+
+            if (event.target.tagName === "INPUT" &&
+                event.target.type === "text") {
+
+                event.target.value =
+                    event.target.value.toUpperCase();
+            }
+        });
+
+        document.addEventListener("keydown", function (event) {
+
+            if (event.key === "F1") {
+                event.preventDefault();
+
+                document.querySelector(
+                    'button[formaction*="Help"]'
+                )?.click();
+            }
+
+            if (event.key === "F3") {
+                event.preventDefault();
+
+                document.querySelector(
+                    'button[formaction*="Previous"]'
+                )?.click();
+            }
+
+            if (event.key === "F6") {
+                event.preventDefault();
+
+                document.querySelector(
+                    'button[formaction*="Reset"]'
+                )?.click();
+            }
+        });
+    </script>
+
+</body>
+</html>
