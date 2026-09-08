@@ -1,9 +1,302 @@
-Quick update on today’s deployment activities.
+@page
+@model PCPM.Pages.D158950Model
 
-We were able to successfully deploy IDH, IMRR, and API. I reviewed the application logs after deployment, and everything is working as expected.
+@{
+    Layout = null;
+    ViewData["Title"] = "D158950";
+}
 
-For Disaster Recovery (DR), I manually updated the traffic in GCP to point to the newer Cloud Run revisions/images and verified that the DR services are now working as expected. The DR traffic update was the part that was causing the pipeline issue this morning. I have updated the pipeline configuration/code to handle the DR traffic update automatically, and those changes are now in the repository.
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>D158950</title>
 
-Additionally, I successfully completed the one-time Firestore scan/update job. The job added the three additional fields to the documents in the Firestore Employee collection as planned.
+    <link rel="stylesheet"
+          href="~/css/pcpm-terminal.css"
+          asp-append-version="true" />
 
-At this point, the deployments, DR configuration, and Firestore update have all been completed successfully.
+    <style>
+        .remarks-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            margin-top: 8px;
+        }
+
+        .remarks-table th,
+        .remarks-table td {
+            padding: 3px 5px;
+            height: 25px;
+            vertical-align: middle;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .remarks-table .sel {
+            width: 45px;
+        }
+
+        .remarks-table .remark {
+            width: 500px;
+        }
+
+        .remarks-table .date {
+            width: 85px;
+        }
+
+        .remarks-table .fa {
+            width: 40px;
+        }
+
+        .remarks-table .type {
+            width: 45px;
+        }
+
+        .remarks-table .user {
+            width: 80px;
+        }
+
+        .history-row {
+            margin-top: 10px;
+            margin-bottom: 5px;
+        }
+
+        .prompt-row {
+            margin-top: 10px;
+            white-space: pre;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="pcpm-screen">
+
+    <form method="post" id="pcpmForm">
+
+        <input type="hidden" asp-for="Command" />
+
+        <div class="header-grid">
+
+            <div>
+                <div class="field-group">
+                    <span>ACTION</span>
+
+                    <input asp-for="Action"
+                           maxlength="3"
+                           class="terminal-dynamic-input action"
+                           autocomplete="off"
+                           autofocus />
+                </div>
+
+                <div class="screen-row">
+                    SCREEN&nbsp;&nbsp;&nbsp;950
+                </div>
+            </div>
+
+            <div class="header-center">
+                <div>ARDOT PCPM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(PROJECT STATUS MODULE)</div>
+                <div>DETAILED REMARKS BROWSE BY DATE</div>
+            </div>
+
+            <div class="header-right">
+                <div>D158950</div>
+                <div>@Model.DateText</div>
+            </div>
+
+        </div>
+
+        <div class="separator"></div>
+
+        <div class="input-row">
+
+            <div class="field-group">
+                <span>JOB NUMBER</span>
+
+                <input value="@Model.JobNumber"
+                       readonly
+                       class="terminal-dynamic-input job-number"
+                       style="background-color:lightgray;" />
+            </div>
+
+            <div class="field-group">
+                <span>NAME</span>
+                <span>@Model.JobName</span>
+            </div>
+
+        </div>
+
+        <div class="history-row field-group">
+            <span>HISTORY:</span>
+
+            <input asp-for="History"
+                   maxlength="1"
+                   class="terminal-dynamic-input selection-box"
+                   autocomplete="off" />
+        </div>
+
+        <span asp-validation-for="History"
+              class="validation-message"></span>
+
+        <table class="remarks-table">
+
+            <thead>
+                <tr>
+                    <th class="sel">SEL</th>
+                    <th class="remark">CONSOLIDATED REMARKS</th>
+                    <th class="date">DATE</th>
+                    <th class="fa">FA</th>
+                    <th class="type">TP</th>
+                    <th class="user">USER</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                @for (var i = 0; i < Model.Rows.Count; i++)
+                {
+                    <tr>
+
+                        <td>
+                            <input asp-for="Rows[i].Selection"
+                                   maxlength="1"
+                                   class="terminal-dynamic-input selection-box"
+                                   autocomplete="off" />
+
+                            <span asp-validation-for="Rows[i].Selection"
+                                  class="validation-message"></span>
+                        </td>
+
+                        <td>
+                            @Model.Rows[i].Remark
+                            <input type="hidden" asp-for="Rows[i].Remark" />
+                        </td>
+
+                        <td>
+                            @Model.Rows[i].LastUpdated
+                            <input type="hidden" asp-for="Rows[i].LastUpdated" />
+                        </td>
+
+                        <td>
+                            @Model.Rows[i].FunctionalArea
+                            <input type="hidden" asp-for="Rows[i].FunctionalArea" />
+                        </td>
+
+                        <td>
+                            @Model.Rows[i].RemarkType
+                            <input type="hidden" asp-for="Rows[i].RemarkType" />
+                        </td>
+
+                        <td>
+                            @Model.Rows[i].UserId
+                            <input type="hidden" asp-for="Rows[i].UserId" />
+                        </td>
+
+                    </tr>
+                }
+
+            </tbody>
+
+        </table>
+
+        <div class="prompt-row">
+            ENTER 'A' 'D' OR 'U' IN THE SELECTION FIELD TO ACCESS THE DESIRED FUNCTION
+        </div>
+
+        <div class="function-keys">
+
+            <button type="submit"
+                    class="function-button"
+                    onclick="setCommand('F1')">
+                F1=HELP
+            </button>
+
+            <button type="submit"
+                    class="function-button"
+                    onclick="setCommand('F3')">
+                F3=PREV
+            </button>
+
+            <button type="submit"
+                    class="function-button"
+                    onclick="setCommand('F4')">
+                F4=SCRLB
+            </button>
+
+            <button type="submit"
+                    class="function-button"
+                    onclick="setCommand('F5')">
+                F5=SCRLF
+            </button>
+
+            <button type="submit"
+                    class="function-button"
+                    onclick="setCommand('F6')">
+                F6=RESET
+            </button>
+
+            <button type="submit"
+                    class="function-button"
+                    onclick="setCommand('F7')">
+                F7=BKWRD
+            </button>
+
+            <button type="submit"
+                    class="function-button"
+                    onclick="setCommand('F8')">
+                F8=FRWRD
+            </button>
+
+            <button type="submit"
+                    class="function-button"
+                    onclick="setCommand('F12')">
+                F12=MAIN
+            </button>
+
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="message">
+                @Model.ErrorMessage
+            </div>
+        }
+
+    </form>
+
+</div>
+
+<script>
+    function setCommand(command) {
+        document.getElementById("Command").value = command;
+    }
+
+    document.addEventListener("input", function (event) {
+        if (event.target.tagName === "INPUT" &&
+            event.target.type === "text") {
+
+            event.target.value =
+                event.target.value.toUpperCase();
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+
+        const supported = [
+            "F1", "F3", "F4", "F5",
+            "F6", "F7", "F8", "F12"
+        ];
+
+        if (!supported.includes(event.key))
+            return;
+
+        event.preventDefault();
+
+        document.getElementById("Command").value = event.key;
+        document.getElementById("pcpmForm").submit();
+    });
+</script>
+
+</body>
+</html>
