@@ -312,3 +312,587 @@
 
 </body>
 </html>
+
+
+
+
+
+
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using PCPM.Session;
+
+namespace PCPM.Pages;
+
+public class D158100Model : PageModel
+{
+    private const string ScreenName = "D158100";
+
+
+    [BindProperty]
+    public string Action { get; set; } = string.Empty;
+
+
+    [BindProperty]
+    public string JobNumber { get; set; } = string.Empty;
+
+
+    [BindProperty]
+    public string FA { get; set; } = string.Empty;
+
+
+    [BindProperty]
+    public List<D158100MenuRow> Rows { get; set; } = new();
+
+
+    public string DisplayDate =>
+        DateTime.Now.ToString("MM/dd/yyyy");
+
+
+    public string ErrorMessage { get; set; } =
+        string.Empty;
+
+
+    // ============================================================
+    // GET
+    // ============================================================
+
+    public IActionResult OnGet()
+    {
+        UpdateScreenSession();
+
+        JobNumber =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.JobNumber)
+            ?? string.Empty;
+
+        FA =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.FunctionalArea)
+            ?? string.Empty;
+
+        BuildRows();
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // ENTER
+    // ============================================================
+
+    public IActionResult OnPost()
+    {
+        Normalize();
+
+        EnsureRows();
+
+
+        // --------------------------------------------------------
+        // ACTION FIELD
+        // --------------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(Action))
+        {
+            return ProcessAction();
+        }
+
+
+        var selectedRows =
+            Rows
+                .Where(x =>
+                    !string.IsNullOrWhiteSpace(
+                        x.Selection))
+                .ToList();
+
+
+        if (selectedRows.Count == 0)
+        {
+            ErrorMessage =
+                "ENTER A, D, U OR I IN THE SELECTION FIELD.";
+
+            return Page();
+        }
+
+
+        if (selectedRows.Count > 1)
+        {
+            ErrorMessage =
+                "SELECT ONLY ONE MENU ITEM.";
+
+            return Page();
+        }
+
+
+        var selected =
+            selectedRows[0];
+
+
+        var code =
+            selected.Selection;
+
+
+        SaveJobContext();
+
+
+        // --------------------------------------------------------
+        // BASIC JOB INFORMATION
+        //
+        // ASPX shows:
+        //
+        // 101 / 201 / 301 / 401
+        //
+        // A = 101
+        // U = 201
+        // I = 301
+        // D = 401
+        // --------------------------------------------------------
+
+        if (selected.FunctionalArea == "BI")
+        {
+            return code switch
+            {
+                "A" => GoToScreen("D158101"),
+
+                "U" => GoToScreen("D158201"),
+
+                "I" => GoToScreen("D158301"),
+
+                "D" => GoToScreen("D158401"),
+
+                _ => InvalidSelection()
+            };
+        }
+
+
+        // --------------------------------------------------------
+        // ALL OTHER FUNCTIONAL AREAS
+        //
+        // Legacy screen displays:
+        //
+        // /202/302/
+        //
+        // U = D158202
+        // I = D158302
+        // --------------------------------------------------------
+
+        if (code != "U" &&
+            code != "I")
+        {
+            ErrorMessage =
+                "FOR THIS FUNCTIONAL AREA ENTER U OR I.";
+
+            return Page();
+        }
+
+
+        if (string.IsNullOrWhiteSpace(
+                selected.FunctionalArea))
+        {
+            ErrorMessage =
+                "FUNCTIONAL AREA NOT AVAILABLE.";
+
+            return Page();
+        }
+
+
+        FA =
+            selected.FunctionalArea;
+
+
+        HttpContext.Session.SetString(
+            PcpmSessionKeys.FunctionalArea,
+            FA);
+
+
+        if (code == "U")
+        {
+            return GoToScreen("D158202");
+        }
+
+
+        return GoToScreen("D158302");
+    }
+
+
+    // ============================================================
+    // F1
+    // ============================================================
+
+    public IActionResult OnPostHelp()
+    {
+        Normalize();
+        EnsureRows();
+
+        ErrorMessage =
+            "ENTER A, D, U OR I IN ONE SELECTION FIELD.";
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F3
+    // ============================================================
+
+    public IActionResult OnPostPrevious()
+    {
+        SaveJobContext();
+
+        var previous =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.PreviousScreen);
+
+        if (string.IsNullOrWhiteSpace(previous) ||
+            previous == ScreenName)
+        {
+            previous = "D158000";
+        }
+
+        return RedirectToPage(
+            "/" + previous);
+    }
+
+
+    // ============================================================
+    // F6
+    // ============================================================
+
+    public IActionResult OnPostReset()
+    {
+        Action = string.Empty;
+
+        ErrorMessage = string.Empty;
+
+        BuildRows();
+
+        JobNumber =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.JobNumber)
+            ?? string.Empty;
+
+        FA =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.FunctionalArea)
+            ?? string.Empty;
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F12
+    // ============================================================
+
+    public IActionResult OnPostMainMenu()
+    {
+        SaveJobContext();
+
+        return GoToScreen(
+            "D158000");
+    }
+
+
+    // ============================================================
+    // ACTION
+    // ============================================================
+
+    private IActionResult ProcessAction()
+    {
+        if (Action == "SO")
+        {
+            ErrorMessage =
+                "SO ACTION IS NOT WIRED YET.";
+
+            return Page();
+        }
+
+
+        if (!Action.All(char.IsDigit))
+        {
+            ErrorMessage =
+                "INVALID ACTION CODE.";
+
+            return Page();
+        }
+
+
+        if (!int.TryParse(
+                Action,
+                out var screen))
+        {
+            ErrorMessage =
+                "INVALID ACTION CODE.";
+
+            return Page();
+        }
+
+
+        SaveJobContext();
+
+
+        var target =
+            $"D158{screen:000}";
+
+
+        return GoToScreen(target);
+    }
+
+
+    // ============================================================
+    // BUILD MENU
+    // ============================================================
+
+    private void BuildRows()
+    {
+        Rows =
+        [
+            new()
+            {
+                OptionNumber = 1,
+                FunctionalArea = "BI",
+                PanelTitle =
+                    "BASIC JOB INFORMATION",
+                ScreenNumbers =
+                    "101/201/301/401"
+            },
+
+            new()
+            {
+                OptionNumber = 2,
+                FunctionalArea = "BR",
+                PanelTitle = "BRIDGE",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 3,
+                FunctionalArea = "DS",
+                PanelTitle = "DESIGN SURVEY",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 4,
+                FunctionalArea = "EN",
+                PanelTitle = "ENVIRONMENTAL",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 5,
+                FunctionalArea = "GT",
+                PanelTitle = "GEOTECHNICAL",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 6,
+                FunctionalArea = "PA",
+                PanelTitle = "PUBLIC HEARING",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 7,
+                FunctionalArea = "PS",
+                PanelTitle = "PARCEL SURVEY",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 8,
+                FunctionalArea = "PC",
+                PanelTitle = "PS & E",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 9,
+                FunctionalArea = "RR",
+                PanelTitle = "RAILROAD",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 10,
+                FunctionalArea = "RW",
+                PanelTitle = "RIGHT OF WAY",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 11,
+                FunctionalArea = "RD",
+                PanelTitle = "ROADWAY",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 12,
+                FunctionalArea = "TR",
+                PanelTitle = "TRAFFIC",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 13,
+                FunctionalArea = "UT",
+                PanelTitle = "UTILITY",
+                ScreenNumbers = "/202/302/"
+            },
+
+            new()
+            {
+                OptionNumber = 14,
+                FunctionalArea = "VE",
+                PanelTitle = "VALUE ENGINEERING",
+                ScreenNumbers = "/202/302/"
+            }
+        ];
+    }
+
+
+    private void EnsureRows()
+    {
+        if (Rows is null ||
+            Rows.Count != 14)
+        {
+            BuildRows();
+        }
+    }
+
+
+    private void Normalize()
+    {
+        Action =
+            (Action ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+
+        JobNumber =
+            (JobNumber ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+
+        FA =
+            (FA ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+
+
+        Rows ??=
+            new List<D158100MenuRow>();
+
+
+        foreach (var row in Rows)
+        {
+            row.Selection =
+                (row.Selection ?? string.Empty)
+                .Trim()
+                .ToUpperInvariant();
+
+            row.FunctionalArea =
+                (row.FunctionalArea ?? string.Empty)
+                .Trim()
+                .ToUpperInvariant();
+        }
+    }
+
+
+    private IActionResult InvalidSelection()
+    {
+        ErrorMessage =
+            "INVALID SELECTION CODE.";
+
+        return Page();
+    }
+
+
+    private void SaveJobContext()
+    {
+        if (!string.IsNullOrWhiteSpace(
+                JobNumber))
+        {
+            HttpContext.Session.SetString(
+                PcpmSessionKeys.JobNumber,
+                JobNumber);
+        }
+
+        if (!string.IsNullOrWhiteSpace(FA))
+        {
+            HttpContext.Session.SetString(
+                PcpmSessionKeys.FunctionalArea,
+                FA);
+        }
+    }
+
+
+    private IActionResult GoToScreen(
+        string screen)
+    {
+        HttpContext.Session.SetString(
+            PcpmSessionKeys.PreviousScreen,
+            ScreenName);
+
+        HttpContext.Session.SetString(
+            PcpmSessionKeys.CurrentScreen,
+            screen);
+
+        return RedirectToPage(
+            "/" + screen);
+    }
+
+
+    private void UpdateScreenSession()
+    {
+        var current =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.CurrentScreen);
+
+        if (!string.IsNullOrWhiteSpace(current) &&
+            !string.Equals(
+                current,
+                ScreenName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            HttpContext.Session.SetString(
+                PcpmSessionKeys.PreviousScreen,
+                current);
+        }
+
+        HttpContext.Session.SetString(
+            PcpmSessionKeys.CurrentScreen,
+            ScreenName);
+    }
+}
+
+
+public class D158100MenuRow
+{
+    public int OptionNumber { get; set; }
+
+    public string Selection { get; set; } =
+        string.Empty;
+
+    public string FunctionalArea { get; set; } =
+        string.Empty;
+
+    public string PanelTitle { get; set; } =
+        string.Empty;
+
+    public string ScreenNumbers { get; set; } =
+        string.Empty;
+}
