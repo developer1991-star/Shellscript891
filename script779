@@ -1,261 +1,1070 @@
-import firebase_admin
-from firebase_admin import credentials, firestore
+@page
+@model PCPM.Pages.D158500Model
+@{
+    Layout = null;
+    ViewData["Title"] = "D158500";
+}
 
-PROJECT_ID = "gcp-emp-ep-prod"
-COLLECTION = "Employees"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
 
-PROCESS_BATCH_SIZE = 30000
-WRITE_BATCH_SIZE = 500
+    <title>D158500</title>
 
-cred = credentials.ApplicationDefault()
-firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
+    <link rel="stylesheet"
+          href="~/css/pcpm-terminal.css"
+          asp-append-version="true" />
+</head>
 
-db = firestore.client()
-employee_ref = db.collection(COLLECTION)
+<body>
 
-# Get total count for percentage
-count_result = employee_ref.count().get()
-total_docs = count_result[0][0].value
+<div class="pcpm-screen">
 
-print(f"Total Employees: {total_docs}")
+<form method="post"
+      id="pcpmForm"
+      class="pcpm-form">
 
-processed = 0
-updated = 0
-last_doc = None
 
-while True:
-    query = employee_ref.order_by("__name__").limit(PROCESS_BATCH_SIZE)
+    <!-- =========================================================
+         HEADER
+         ========================================================= -->
 
-    if last_doc is not None:
-        query = query.start_after(last_doc)
+    <div class="pcpm-header-row">
 
-    docs = list(query.stream())
+        <div class="pcpm-header-left">
 
-    if not docs:
-        break
+            ACTION
 
-    batch = db.batch()
-    write_count = 0
+            <input asp-for="Action"
+                   class="pcpm-input pcpm-input-3"
+                   maxlength="3"
+                   autocomplete="off"
+                   autofocus />
 
-    for doc in docs:
-        data = doc.to_dict()
+        </div>
 
-        fields_to_add = {}
 
-        if "employeeJobDotQualifier" not in data:
-            fields_to_add["employeeJobDotQualifier"] = ""
+        <div class="pcpm-header-center">
+            ARDOT PRE-CONSTRUCTION PROJECT MONITORING
+        </div>
 
-        if "terminationReasonCode" not in data:
-            fields_to_add["terminationReasonCode"] = ""
 
-        if "lastModified" not in data:
-            fields_to_add["lastModified"] = ""
+        <div class="pcpm-header-right">
+            D158500
+        </div>
 
-        if fields_to_add:
-            batch.update(doc.reference, fields_to_add)
-            write_count += 1
-            updated += 1
+    </div>
 
-        # Commit every 500 writes
-        if write_count == WRITE_BATCH_SIZE:
-            batch.commit()
-            batch = db.batch()
-            write_count = 0
 
-        processed += 1
+    <div class="pcpm-header-row">
 
-    # Commit remaining writes
-    if write_count > 0:
-        batch.commit()
+        <div class="pcpm-header-left">
+            SCREEN&nbsp;&nbsp;500
+        </div>
 
-    last_doc = docs[-1]
 
-    percentage = (processed / total_docs) * 100
+        <div class="pcpm-header-center">
+            JOB STATUS SUMMARY INQUIRY
+        </div>
 
-    print(
-        f"Processed: {processed}/{total_docs} "
-        f"({percentage:.2f}%) | Updated: {updated}"
-    )
 
-print("\nCompleted")
-print(f"Total scanned: {processed}")
-print(f"Total updated: {updated}")
-print("100% complete")
+        <div class="pcpm-header-right">
+            @Model.DisplayDate
+        </div>
 
+    </div>
 
 
+    <div class="pcpm-separator"></div>
 
 
+    <!-- =========================================================
+         JOB
+         ========================================================= -->
 
+    <div class="d158500-job-row">
 
+        <span>JOB NUMBER:</span>
 
+        <input asp-for="JobNumber"
+               class="pcpm-input pcpm-input-job"
+               maxlength="10"
+               readonly />
 
 
+        <span>NAME:</span>
 
+        <span>@Model.JobName</span>
 
-import firebase_admin
-from firebase_admin import credentials, firestore
+    </div>
 
-PROJECT_ID = "gcp-emp-ep-prod"
 
-cred = credentials.ApplicationDefault()
-firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
+    <!-- =========================================================
+         SUMMARY
+         ========================================================= -->
 
-db = firestore.client()
+    <div class="d158500-summary-row">
 
-collection = db.collection("Employees")
+        <span>SF</span>
 
-missing_count = 0
-total_count = 0
-last_doc = None
-BATCH_SIZE = 500
+        <input asp-for="SF"
+               class="pcpm-input pcpm-input-1"
+               maxlength="1"
+               autocomplete="off" />
 
-while True:
-    query = collection.order_by("__name__").limit(BATCH_SIZE)
 
-    if last_doc is not None:
-        query = query.start_after(last_doc)
+        <span>TOTAL FUNDING:</span>
 
-    docs = list(query.stream())
+        <span>@Model.TotalFunding</span>
 
-    if not docs:
-        break
 
-    for doc in docs:
-        data = doc.to_dict()
-        total_count += 1
+        <span>PS&amp;E:</span>
 
-        if (
-            "employeeJobDotQualifier" not in data
-            or "terminationReasonCode" not in data
-            or "lastModified" not in data
-        ):
-            missing_count += 1
+        <span>@Model.PseEnd</span>
 
-    last_doc = docs[-1]
 
-    print(f"Scanned: {total_count}, Missing: {missing_count}")
+        <span>VALUE ENGINEERING:</span>
 
-print(f"\nTotal records: {total_count}")
-print(f"Missing any of the 3 fields: {missing_count}")
+        <span>@Model.ValueEngineeringPercent</span>
 
+    </div>
 
 
+    <!-- =========================================================
+         TABLE HEADER
+         ========================================================= -->
 
+    <div class="d158500-table-header">
 
-import firebase_admin
-from firebase_admin import credentials, firestore
+        <span>SEL</span>
 
-PROD_PROJECT = "gcp-emp-ep-prod"
-PROD_DATABASE = "(default)"
-PROD_COLLECTION = "Employees"
+        <span>FUNCTIONAL AREA</span>
 
-UAT_PROJECT = "gcp-emp-ep-uat"
-UAT_DATABASE = "(default)"
-UAT_COLLECTION = "Employees_test"
+        <span>FA</span>
 
-DEV_PROJECT = "gcp-emp-ep-dev"
-DEV_DATABASE = "(default)"
-DEV_COLLECTION = "Employees"
+        <span>STARTED</span>
 
-# Choose: "PROD", "UAT", or "DEV"
-TARGET_ENV = "DEV"
+        <span>PROJ COM</span>
 
-if TARGET_ENV == "PROD":
-    project_id = PROD_PROJECT
-    database_id = PROD_DATABASE
-    collection_name = PROD_COLLECTION
+        <span>% COMPL</span>
 
-elif TARGET_ENV == "UAT":
-    project_id = UAT_PROJECT
-    database_id = UAT_DATABASE
-    collection_name = UAT_COLLECTION
+        <span>COMPLETE</span>
 
-elif TARGET_ENV == "DEV":
-    project_id = DEV_PROJECT
-    database_id = DEV_DATABASE
-    collection_name = DEV_COLLECTION
+        <span>FLAG</span>
 
-else:
-    raise ValueError("TARGET_ENV must be PROD, UAT, or DEV")
+    </div>
 
 
-cred = credentials.ApplicationDefault()
+    <!-- =========================================================
+         11 STATUS ROWS
+         ========================================================= -->
 
-firebase_admin.initialize_app(
-    cred,
+    @for (var i = 0;
+          i < Model.Rows.Count;
+          i++)
     {
-        "projectId": project_id
+        <div class="d158500-table-row">
+
+            <input type="hidden"
+                   asp-for="Rows[i].RowNumber" />
+
+            <input type="hidden"
+                   asp-for="Rows[i].FunctionalAreaDescription" />
+
+            <input type="hidden"
+                   asp-for="Rows[i].FunctionalArea" />
+
+            <input type="hidden"
+                   asp-for="Rows[i].StartDate" />
+
+            <input type="hidden"
+                   asp-for="Rows[i].ProjectedCompletion" />
+
+            <input type="hidden"
+                   asp-for="Rows[i].PercentComplete" />
+
+            <input type="hidden"
+                   asp-for="Rows[i].CompletionDate" />
+
+            <input type="hidden"
+                   asp-for="Rows[i].StatusFlag" />
+
+
+            <input asp-for="Rows[i].Selection"
+                   class="pcpm-input pcpm-input-1 selection-field"
+                   maxlength="1"
+                   autocomplete="off" />
+
+
+            <span>
+                @Model.Rows[i].FunctionalAreaDescription
+            </span>
+
+
+            <span>
+                @Model.Rows[i].FunctionalArea
+            </span>
+
+
+            <span>
+                @Model.Rows[i].StartDate
+            </span>
+
+
+            <span>
+                @Model.Rows[i].ProjectedCompletion
+            </span>
+
+
+            <span>
+                @Model.Rows[i].PercentComplete
+            </span>
+
+
+            <span>
+                @Model.Rows[i].CompletionDate
+            </span>
+
+
+            <span>
+                @Model.Rows[i].StatusFlag
+            </span>
+
+        </div>
     }
-)
-
-db = firestore.client()
-
-print(f"Environment: {TARGET_ENV}")
-print(f"Project: {project_id}")
-print(f"Database: {database_id}")
-print(f"Collection: {collection_name}")
-
-employee_ref = db.collection(collection_name)
-
-updated_count = 0
-skipped_count = 0
-
-BATCH_SIZE = 200
-last_doc = None
-
-while True:
-    query = employee_ref.order_by("__name__").limit(BATCH_SIZE)
-
-    if last_doc is not None:
-        query = query.start_after(last_doc)
-
-    docs = list(query.stream())
-
-    if not docs:
-        break
-
-    for doc in docs:
-        data = doc.to_dict()
-
-        fields_to_add = {}
-
-        if "employeeJobDotQualifier" not in data:
-            fields_to_add["employeeJobDotQualifier"] = ""
-
-        if "terminationReasonCode" not in data:
-            fields_to_add["terminationReasonCode"] = ""
-
-        if "lastModified" not in data:
-            fields_to_add["lastModified"] = ""
-
-        if fields_to_add:
-            doc.reference.update(fields_to_add)
-
-            print(
-                f"Updated {doc.id}: "
-                f"{list(fields_to_add.keys())}"
-            )
-
-            updated_count += 1
-
-        else:
-            print(
-                f"Skipped {doc.id}: "
-                f"Field A and Field B already exist"
-            )
-
-            skipped_count += 1
-
-    last_doc = docs[-1]
-
-    print(
-        f"Batch complete - "
-        f"Updated: {updated_count}, "
-        f"Skipped: {skipped_count}"
-    )
 
 
-print("\nCompleted.")
-print(f"Updated: {updated_count}")
-print(f"Skipped: {skipped_count}")
+    <!-- =========================================================
+         REMARK
+         ========================================================= -->
+
+    <div class="d158500-remark-row">
+
+        <input asp-for="SelectRemark"
+               class="pcpm-input pcpm-input-1"
+               maxlength="1"
+               autocomplete="off" />
+
+
+        <span>LAST REMARK:</span>
+
+
+        <span>
+            @Model.LastRemark
+        </span>
+
+
+        <span>
+            @Model.LastUpdated
+        </span>
+
+    </div>
+
+
+    <div class="pcpm-separator"></div>
+
+
+    <!-- =========================================================
+         FUNCTION KEYS
+         ========================================================= -->
+
+    <div class="pcpm-function-keys">
+
+        <button type="submit"
+                asp-page-handler="Help"
+                id="helpButton"
+                class="pcpm-function-button">
+            F1=HELP
+        </button>
+
+
+        <button type="submit"
+                asp-page-handler="Previous"
+                id="previousButton"
+                class="pcpm-function-button">
+            F3=PREVIOUS
+        </button>
+
+
+        <button type="submit"
+                asp-page-handler="Reset"
+                id="resetButton"
+                class="pcpm-function-button">
+            F6=RESET
+        </button>
+
+
+        <button type="submit"
+                asp-page-handler="Backward"
+                id="backwardButton"
+                class="pcpm-function-button">
+            F7=BACKWARD
+        </button>
+
+
+        <button type="submit"
+                asp-page-handler="Forward"
+                id="forwardButton"
+                class="pcpm-function-button">
+            F8=FORWARD
+        </button>
+
+
+        <button type="submit"
+                asp-page-handler="MainMenu"
+                id="mainMenuButton"
+                class="pcpm-function-button">
+            F12=MAIN MENU
+        </button>
+
+    </div>
+
+
+    <div class="pcpm-error">
+        @Model.ErrorMessage
+    </div>
+
+
+    <button type="submit"
+            id="enterButton"
+            class="pcpm-hidden-submit">
+    </button>
+
+</form>
+
+</div>
+
+
+<script>
+    (() => {
+
+        document.querySelectorAll(
+            ".selection-field, .pcpm-input"
+        ).forEach(input => {
+
+            input.addEventListener(
+                "input",
+                function () {
+
+                    this.value =
+                        this.value.toUpperCase();
+
+                });
+
+        });
+
+
+        document.addEventListener(
+            "keydown",
+            function (event) {
+
+                let id = null;
+
+
+                switch (event.key) {
+
+                    case "Enter":
+                        id = "enterButton";
+                        break;
+
+                    case "F1":
+                        id = "helpButton";
+                        break;
+
+                    case "F3":
+                        id = "previousButton";
+                        break;
+
+                    case "F6":
+                        id = "resetButton";
+                        break;
+
+                    case "F7":
+                        id = "backwardButton";
+                        break;
+
+                    case "F8":
+                        id = "forwardButton";
+                        break;
+
+                    case "F12":
+                        id = "mainMenuButton";
+                        break;
+                }
+
+
+                if (!id)
+                    return;
+
+
+                event.preventDefault();
+
+
+                document
+                    .getElementById(id)
+                    .click();
+
+            });
+
+    })();
+</script>
+
+</body>
+</html>
+
+
+
+
+
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using PCPM.Session;
+
+namespace PCPM.Pages;
+
+public class D158500Model : PageModel
+{
+    private const string ScreenName =
+        "D158500";
+
+
+    [BindProperty]
+    public string Action { get; set; } =
+        string.Empty;
+
+
+    [BindProperty]
+    public string JobNumber { get; set; } =
+        string.Empty;
+
+
+    public string JobName { get; set; } =
+        string.Empty;
+
+
+    [BindProperty]
+    public string SF { get; set; } =
+        string.Empty;
+
+
+    public string TotalFunding { get; set; } =
+        string.Empty;
+
+
+    public string PseEnd { get; set; } =
+        string.Empty;
+
+
+    public string ValueEngineeringPercent
+    {
+        get;
+        set;
+    } = string.Empty;
+
+
+    [BindProperty]
+    public List<D158500Row> Rows { get; set; } =
+        new();
+
+
+    [BindProperty]
+    public string SelectRemark { get; set; } =
+        string.Empty;
+
+
+    public string LastRemark { get; set; } =
+        string.Empty;
+
+
+    public string LastUpdated { get; set; } =
+        string.Empty;
+
+
+    public string ErrorMessage { get; set; } =
+        string.Empty;
+
+
+    public string DisplayDate =>
+        DateTime.Now.ToString("MM/dd/yyyy");
+
+
+    // ============================================================
+    // GET
+    // ============================================================
+
+    public IActionResult OnGet()
+    {
+        UpdateScreenSession();
+
+
+        JobNumber =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.JobNumber)
+            ?? string.Empty;
+
+
+        BuildBlankRows();
+
+
+        /*
+         * DATABASE LOADING WILL GO HERE NEXT:
+         *
+         * JobName
+         * TotalFunding
+         * PseEnd
+         * ValueEngineeringPercent
+         * Rows
+         * LastRemark
+         * LastUpdated
+         */
+
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // ENTER
+    // ============================================================
+
+    public IActionResult OnPost()
+    {
+        Normalize();
+
+        EnsureRows();
+
+
+        var selectedRows =
+            Rows
+                .Where(x =>
+                    !string.IsNullOrWhiteSpace(
+                        x.Selection))
+                .ToList();
+
+
+        var navigationCount = 0;
+
+
+        if (!string.IsNullOrWhiteSpace(Action))
+            navigationCount++;
+
+
+        if (!string.IsNullOrWhiteSpace(SF))
+            navigationCount++;
+
+
+        if (!string.IsNullOrWhiteSpace(
+                SelectRemark))
+            navigationCount++;
+
+
+        navigationCount +=
+            selectedRows.Count;
+
+
+        if (navigationCount > 1)
+        {
+            ErrorMessage =
+                "NAVIGATION CONFLICT.";
+
+            return Page();
+        }
+
+
+        // --------------------------------------------------------
+        // ACTION
+        // --------------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(Action))
+        {
+            return ProcessAction();
+        }
+
+
+        // --------------------------------------------------------
+        // SF
+        //
+        // Legacy PCPM:
+        //
+        // SF = S -> 510
+        // --------------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(SF))
+        {
+            if (SF != "S")
+            {
+                ErrorMessage =
+                    "INVALID SF SELECTION.";
+
+                return Page();
+            }
+
+
+            SaveJobNumber();
+
+
+            return GoToScreen(
+                "D158510");
+        }
+
+
+        // --------------------------------------------------------
+        // LAST REMARK
+        //
+        // SELREM = S -> 550
+        // --------------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(
+                SelectRemark))
+        {
+            if (SelectRemark != "S")
+            {
+                ErrorMessage =
+                    "INVALID REMARK SELECTION.";
+
+                return Page();
+            }
+
+
+            SaveJobNumber();
+
+
+            return GoToScreen(
+                "D158550");
+        }
+
+
+        // --------------------------------------------------------
+        // FUNCTIONAL AREA ROW
+        //
+        // S / I -> 302
+        // U     -> 202
+        // --------------------------------------------------------
+
+        if (selectedRows.Count == 1)
+        {
+            var row =
+                selectedRows[0];
+
+
+            if (string.IsNullOrWhiteSpace(
+                    row.FunctionalArea))
+            {
+                ErrorMessage =
+                    "FUNCTIONAL AREA NOT AVAILABLE.";
+
+                return Page();
+            }
+
+
+            HttpContext.Session.SetString(
+                PcpmSessionKeys.FunctionalArea,
+                row.FunctionalArea);
+
+
+            SaveJobNumber();
+
+
+            if (row.Selection == "S" ||
+                row.Selection == "I")
+            {
+                return GoToScreen(
+                    "D158302");
+            }
+
+
+            if (row.Selection == "U")
+            {
+                return GoToScreen(
+                    "D158202");
+            }
+
+
+            ErrorMessage =
+                "INVALID SELECTION CODE.";
+
+            return Page();
+        }
+
+
+        ErrorMessage =
+            "SELECTION NOT SPECIFIED.";
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F1
+    // ============================================================
+
+    public IActionResult OnPostHelp()
+    {
+        Normalize();
+        EnsureRows();
+
+        ErrorMessage =
+            "ENTER A VALID SELECTION AND PRESS ENTER.";
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F3
+    // ============================================================
+
+    public IActionResult OnPostPrevious()
+    {
+        SaveJobNumber();
+
+        var previous =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.PreviousScreen);
+
+
+        if (string.IsNullOrWhiteSpace(previous) ||
+            previous == ScreenName)
+        {
+            previous = "D158100";
+        }
+
+
+        return RedirectToPage(
+            "/" + previous);
+    }
+
+
+    // ============================================================
+    // F6
+    // ============================================================
+
+    public IActionResult OnPostReset()
+    {
+        Action =
+            string.Empty;
+
+        SF =
+            string.Empty;
+
+        SelectRemark =
+            string.Empty;
+
+        ErrorMessage =
+            string.Empty;
+
+
+        BuildBlankRows();
+
+
+        JobNumber =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.JobNumber)
+            ?? string.Empty;
+
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F7
+    //
+    // Actual DB backward-job lookup will be connected later.
+    // ============================================================
+
+    public IActionResult OnPostBackward()
+    {
+        Normalize();
+        EnsureRows();
+
+        ErrorMessage =
+            "BACKWARD JOB LOOKUP IS NOT WIRED YET.";
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F8
+    //
+    // Actual DB forward-job lookup will be connected later.
+    // ============================================================
+
+    public IActionResult OnPostForward()
+    {
+        Normalize();
+        EnsureRows();
+
+        ErrorMessage =
+            "FORWARD JOB LOOKUP IS NOT WIRED YET.";
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F12
+    // ============================================================
+
+    public IActionResult OnPostMainMenu()
+    {
+        SaveJobNumber();
+
+        return GoToScreen(
+            "D158000");
+    }
+
+
+    // ============================================================
+    // ACTION
+    // ============================================================
+
+    private IActionResult ProcessAction()
+    {
+        if (Action == "SO")
+        {
+            ErrorMessage =
+                "SO ACTION IS NOT WIRED YET.";
+
+            return Page();
+        }
+
+
+        if (!Action.All(char.IsDigit))
+        {
+            ErrorMessage =
+                "INVALID ACTION CODE.";
+
+            return Page();
+        }
+
+
+        if (!int.TryParse(
+                Action,
+                out var screen))
+        {
+            ErrorMessage =
+                "INVALID ACTION CODE.";
+
+            return Page();
+        }
+
+
+        SaveJobNumber();
+
+
+        return GoToScreen(
+            $"D158{screen:000}");
+    }
+
+
+    // ============================================================
+    // ROW INITIALIZATION
+    // ============================================================
+
+    private void BuildBlankRows()
+    {
+        Rows =
+            Enumerable
+                .Range(1, 11)
+                .Select(x =>
+                    new D158500Row
+                    {
+                        RowNumber = x
+                    })
+                .ToList();
+    }
+
+
+    private void EnsureRows()
+    {
+        Rows ??=
+            new List<D158500Row>();
+
+
+        while (Rows.Count < 11)
+        {
+            Rows.Add(
+                new D158500Row
+                {
+                    RowNumber =
+                        Rows.Count + 1
+                });
+        }
+
+
+        if (Rows.Count > 11)
+        {
+            Rows =
+                Rows
+                    .Take(11)
+                    .ToList();
+        }
+    }
+
+
+    private void Normalize()
+    {
+        Action =
+            (Action ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+
+
+        JobNumber =
+            (JobNumber ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+
+
+        SF =
+            (SF ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+
+
+        SelectRemark =
+            (SelectRemark ?? string.Empty)
+            .Trim()
+            .ToUpperInvariant();
+
+
+        Rows ??=
+            new List<D158500Row>();
+
+
+        foreach (var row in Rows)
+        {
+            row.Selection =
+                (row.Selection ??
+                 string.Empty)
+                .Trim()
+                .ToUpperInvariant();
+
+
+            row.FunctionalArea =
+                (row.FunctionalArea ??
+                 string.Empty)
+                .Trim()
+                .ToUpperInvariant();
+        }
+    }
+
+
+    private void SaveJobNumber()
+    {
+        if (string.IsNullOrWhiteSpace(
+                JobNumber))
+        {
+            return;
+        }
+
+
+        HttpContext.Session.SetString(
+            PcpmSessionKeys.JobNumber,
+            JobNumber);
+    }
+
+
+    private IActionResult GoToScreen(
+        string screen)
+    {
+        HttpContext.Session.SetString(
+            PcpmSessionKeys.PreviousScreen,
+            ScreenName);
+
+
+        HttpContext.Session.SetString(
+            PcpmSessionKeys.CurrentScreen,
+            screen);
+
+
+        return RedirectToPage(
+            "/" + screen);
+    }
+
+
+    private void UpdateScreenSession()
+    {
+        var current =
+            HttpContext.Session.GetString(
+                PcpmSessionKeys.CurrentScreen);
+
+
+        if (!string.IsNullOrWhiteSpace(current) &&
+            !string.Equals(
+                current,
+                ScreenName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            HttpContext.Session.SetString(
+                PcpmSessionKeys.PreviousScreen,
+                current);
+        }
+
+
+        HttpContext.Session.SetString(
+            PcpmSessionKeys.CurrentScreen,
+            ScreenName);
+    }
+}
+
+
+public class D158500Row
+{
+    public int RowNumber { get; set; }
+
+
+    public string Selection { get; set; } =
+        string.Empty;
+
+
+    // COBOL X(15)
+    public string FunctionalAreaDescription
+    {
+        get;
+        set;
+    } = string.Empty;
+
+
+    // COBOL X(2)
+    public string FunctionalArea { get; set; } =
+        string.Empty;
+
+
+    // COBOL X(7)
+    public string StartDate { get; set; } =
+        string.Empty;
+
+
+    // COBOL X(7)
+    public string ProjectedCompletion
+    {
+        get;
+        set;
+    } = string.Empty;
+
+
+    // COBOL X(3)
+    public string PercentComplete
+    {
+        get;
+        set;
+    } = string.Empty;
+
+
+    // COBOL X(7)
+    public string CompletionDate
+    {
+        get;
+        set;
+    } = string.Empty;
+
+
+    // COBOL X(2)
+    public string StatusFlag { get; set; } =
+        string.Empty;
+}
