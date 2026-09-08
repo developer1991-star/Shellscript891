@@ -1,0 +1,314 @@
+@page
+@model PCPM.Pages.D158100Model
+@{
+    Layout = null;
+    ViewData["Title"] = "D158100";
+}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>D158100</title>
+
+    <link rel="stylesheet"
+          href="~/css/pcpm-terminal.css"
+          asp-append-version="true" />
+</head>
+
+<body>
+
+<div class="pcpm-screen">
+
+    <form method="post"
+          id="pcpmForm"
+          class="pcpm-form">
+
+        <!-- =====================================================
+             HEADER LINE 1
+             ===================================================== -->
+
+        <div class="pcpm-header-row">
+
+            <div class="pcpm-header-left">
+                ACTION
+                <input asp-for="Action"
+                       class="pcpm-input pcpm-input-3"
+                       maxlength="3"
+                       autocomplete="off"
+                       autofocus />
+            </div>
+
+            <div class="pcpm-header-center">
+                ARDOT PRE-CONSTRUCTION PROJECT MONITORING
+            </div>
+
+            <div class="pcpm-header-right">
+                D158100
+            </div>
+
+        </div>
+
+
+        <!-- =====================================================
+             HEADER LINE 2
+             ===================================================== -->
+
+        <div class="pcpm-header-row">
+
+            <div class="pcpm-header-left">
+                SCREEN&nbsp;&nbsp;100
+            </div>
+
+            <div class="pcpm-header-center">
+                FUNCTIONAL AREA STATUS MENU
+            </div>
+
+            <div class="pcpm-header-right">
+                @Model.DisplayDate
+            </div>
+
+        </div>
+
+
+        <div class="pcpm-separator"></div>
+
+
+        <!-- =====================================================
+             JOB / FA
+             ===================================================== -->
+
+        <div class="d158100-context">
+
+            <span>JOB NUMBER</span>
+
+            <input asp-for="JobNumber"
+                   class="pcpm-input pcpm-input-job"
+                   maxlength="10"
+                   autocomplete="off" />
+
+
+            <span>FA</span>
+
+            <input asp-for="FA"
+                   class="pcpm-input pcpm-input-2"
+                   maxlength="2"
+                   autocomplete="off" />
+
+
+            <span>SCREEN NO.</span>
+
+            <span></span>
+
+        </div>
+
+
+        <!-- =====================================================
+             MENU HEADER
+             ===================================================== -->
+
+        <div class="d158100-menu-header">
+
+            <span>SEL</span>
+            <span>OPT</span>
+            <span>FA</span>
+            <span>PANEL TITLE</span>
+            <span>A / U / I / D</span>
+
+        </div>
+
+
+        <!-- =====================================================
+             MENU ROWS
+             ===================================================== -->
+
+        @for (var i = 0; i < Model.Rows.Count; i++)
+        {
+            <div class="d158100-menu-row">
+
+                <input type="hidden"
+                       asp-for="Rows[i].OptionNumber" />
+
+                <input type="hidden"
+                       asp-for="Rows[i].FunctionalArea" />
+
+                <input type="hidden"
+                       asp-for="Rows[i].PanelTitle" />
+
+                <input type="hidden"
+                       asp-for="Rows[i].ScreenNumbers" />
+
+
+                <input asp-for="Rows[i].Selection"
+                       class="pcpm-input pcpm-input-1 selection-field"
+                       maxlength="1"
+                       autocomplete="off" />
+
+
+                <span>@Model.Rows[i].OptionNumber.</span>
+
+                <span>@Model.Rows[i].FunctionalArea</span>
+
+                <span>@Model.Rows[i].PanelTitle</span>
+
+                <span>@Model.Rows[i].ScreenNumbers</span>
+
+            </div>
+        }
+
+
+        <!-- =====================================================
+             INSTRUCTION
+             ===================================================== -->
+
+        <div class="d158100-instruction">
+            ENTER&nbsp;&nbsp;'A'&nbsp;&nbsp;'D'&nbsp;&nbsp;'U'&nbsp;&nbsp;OR 'I'
+            &nbsp;&nbsp;IN THE SELECTION FIELD
+        </div>
+
+
+        <div class="pcpm-separator"></div>
+
+
+        <!-- =====================================================
+             FUNCTION KEYS
+             ===================================================== -->
+
+        <div class="pcpm-function-keys">
+
+            <button type="submit"
+                    asp-page-handler="Help"
+                    id="helpButton"
+                    class="pcpm-function-button">
+                F1=HELP
+            </button>
+
+            <button type="submit"
+                    asp-page-handler="Previous"
+                    id="previousButton"
+                    class="pcpm-function-button">
+                F3=PREVIOUS
+            </button>
+
+            <button type="submit"
+                    asp-page-handler="Reset"
+                    id="resetButton"
+                    class="pcpm-function-button">
+                F6=RESET
+            </button>
+
+            <button type="submit"
+                    asp-page-handler="MainMenu"
+                    id="mainMenuButton"
+                    class="pcpm-function-button">
+                F12=MAIN MENU
+            </button>
+
+        </div>
+
+
+        <div class="pcpm-error">
+            @Model.ErrorMessage
+        </div>
+
+
+        <!-- ENTER -->
+        <button type="submit"
+                id="enterButton"
+                class="pcpm-hidden-submit">
+        </button>
+
+    </form>
+
+</div>
+
+
+<script>
+    (() => {
+
+        const form =
+            document.getElementById("pcpmForm");
+
+        document.querySelectorAll(
+            ".selection-field, .pcpm-input"
+        ).forEach(input => {
+
+            input.addEventListener(
+                "input",
+                function () {
+                    this.value =
+                        this.value.toUpperCase();
+                });
+
+        });
+
+
+        document.addEventListener(
+            "keydown",
+            function (event) {
+
+                if (event.key === "Enter") {
+
+                    event.preventDefault();
+
+                    document
+                        .getElementById("enterButton")
+                        .click();
+
+                    return;
+                }
+
+
+                if (event.key === "F1") {
+
+                    event.preventDefault();
+
+                    document
+                        .getElementById("helpButton")
+                        .click();
+
+                    return;
+                }
+
+
+                if (event.key === "F3") {
+
+                    event.preventDefault();
+
+                    document
+                        .getElementById("previousButton")
+                        .click();
+
+                    return;
+                }
+
+
+                if (event.key === "F6") {
+
+                    event.preventDefault();
+
+                    document
+                        .getElementById("resetButton")
+                        .click();
+
+                    return;
+                }
+
+
+                if (event.key === "F12") {
+
+                    event.preventDefault();
+
+                    document
+                        .getElementById("mainMenuButton")
+                        .click();
+
+                    return;
+                }
+            });
+
+    })();
+</script>
+
+</body>
+</html>
