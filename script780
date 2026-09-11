@@ -1,6 +1,3 @@
-Get-ChildItem Cert:\LocalMachine\Root, Cert:\LocalMachine\CA, Cert:\CurrentUser\Root, Cert:\CurrentUser\CA |
-Where-Object {
-    $_.Subject -match 'UPS|Zscaler|Netskope|Cisco|Palo Alto|Fortinet|Blue Coat' -or
-    $_.Issuer  -match 'UPS|Zscaler|Netskope|Cisco|Palo Alto|Fortinet|Blue Coat'
-} |
-Select-Object Subject, Issuer, Thumbprint
+Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root |
+Where-Object { $_.Subject -match 'Zscaler Root CA' } |
+Format-List Subject, Issuer, Thumbprint, PSParentPath, NotAfter
