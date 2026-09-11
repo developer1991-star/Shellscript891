@@ -1,3 +1,24 @@
-Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root |
-Where-Object { $_.Subject -match 'Zscaler Root CA' } |
-Format-List Subject, Issuer, Thumbprint, PSParentPath, NotAfter
+$thumb = "0D23EE8F0F0560B9F68F2437C526D3CDF1FAF0C5"
+
+$cert = Get-Item "Cert:\LocalMachine\Root\$thumb"
+
+Export-Certificate `
+  -Cert $cert `
+  -FilePath "$HOME\zscaler-root.cer"
+
+certutil -encode "$HOME\zscaler-root.cer" "$HOME\zscaler-root.pem"
+
+$certifi = python -c "import certifi; print(certifi.where())"
+
+Get-Content $certifi -Raw |
+    Set-Content "$HOME\grpc-ca-bundle.pem" -Encoding ascii
+
+Add-Content "$HOME\grpc-ca-bundle.pem" "`r`n"
+Get-Content "$HOME\zscaler-root.pem" -Raw |
+    Add-Content "$HOME\grpc-ca-bundle.pem" -Encoding ascii
+
+$env:GRPC_DEFAULT_SSL_ROOTS_FILE_PATH="$HOME\grpc-ca-bundle.pem"
+$env:SSL_CERT_FILE="$HOME\grpc-ca-bundle.pem"
+
+
+python -c "from google.cloud import firestore; db=firestore.Client(project='gcp-emp-ep-prod'); print(next(db.collection('Employees').limit(1).stream(), None))"
