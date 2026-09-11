@@ -1,511 +1,272 @@
-@page
-@model PCPM.Pages.D158804Model
+"""Bulk sync Firestore Employees from PROD to UAT and DEV.
 
-@{
-    Layout = null;
-    ViewData["Title"] = "D158804";
+What this does:
+- Reads every document from the PROD Employees collection.
+- Upserts/replaces the same document ID in UAT and DEV.
+- Uses Firestore BulkWriter for parallelized writes.
+- Flushes/checkpoints progress every 20,000 source documents.
+- Prints percentage, throughput and ETA.
+
+Important:
+- This mirrors document contents for matching document IDs, but it DOES NOT delete
+  documents that exist only in UAT/DEV.
+- This syncs the configured collection only; document subcollections are not copied.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+from typing import Dict, Iterator
+
+from google.cloud import firestore
+from google.cloud.firestore_v1.field_path import FieldPath
+
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+SOURCE_PROJECT = "gcp-emp-ep-prod"
+SOURCE_DATABASE = "(default)"
+SOURCE_COLLECTION = "Employees"
+
+# I could see gcp-emp-ep-dev in the screenshots, but not a distinct UAT project ID.
+# Set UAT_PROJECT in your environment or replace the placeholder below.
+UAT_PROJECT = os.getenv("UAT_PROJECT", "REPLACE_WITH_UAT_PROJECT_ID")
+DEV_PROJECT = os.getenv("DEV_PROJECT", "gcp-emp-ep-dev")
+
+UAT_DATABASE = "(default)"
+DEV_DATABASE = "(default)"
+UAT_COLLECTION = "Employees"
+DEV_COLLECTION = "Employees"
+
+# Your requested application-level batch/checkpoint size.
+LOGICAL_BATCH_SIZE = 20_000
+
+# Number of source documents read per Firestore query page.
+# This is intentionally smaller than LOGICAL_BATCH_SIZE so we do not hold 20k
+# full documents in memory at once.
+READ_PAGE_SIZE = 1_000
+
+TARGETS = {
+    "UAT": {
+        "project": UAT_PROJECT,
+        "database": UAT_DATABASE,
+        "collection": UAT_COLLECTION,
+    },
+    "DEV": {
+        "project": DEV_PROJECT,
+        "database": DEV_DATABASE,
+        "collection": DEV_COLLECTION,
+    },
 }
 
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8" />
-    <title>D158804</title>
-
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #F2F3FF;
-            color: #111;
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            font-weight: 700;
-        }
-
-        .legacy-screen {
-            position: relative;
-            width: 800px;
-            height: 620px;
-            margin: 0 auto;
-        }
-
-        .abs {
-            position: absolute;
-            white-space: pre;
-        }
-
-        .legacy-input {
-            position: absolute;
-            box-sizing: border-box;
-            height: 23px;
-            padding: 1px 3px;
-            border: 1px solid #777;
-            background: white;
-            color: #111;
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            font-weight: 700;
-            text-transform: uppercase;
-            border-radius: 0;
-        }
-
-        .legacy-input:focus {
-            background: yellow;
-            outline: none;
-        }
-
-        .legacy-input.readonly {
-            background: LightGray;
-        }
-
-        .pf {
-            border: 0;
-            background: transparent;
-            padding: 0;
-            margin: 0;
-            font: inherit;
-            font-weight: 700;
-            cursor: pointer;
-            white-space: pre;
-        }
-
-        .error {
-            color: red;
-        }
-    </style>
-</head>
-
-<body>
-<form method="post" id="legacyForm">
-    @Html.AntiForgeryToken()
-
-    <div class="legacy-screen">
-
-        <div class="abs error" style="left:20px; top:1px;">
-            @Model.OfflineMessage
-        </div>
-
-        <div class="abs" style="left:10px; top:25px;">ACTION</div>
-
-        <input name="Action"
-               value="@Model.Action"
-               maxlength="3"
-               tabindex="1"
-               autocomplete="off"
-               class="legacy-input"
-               style="left:90px; top:25px; width:34px;" />
-
-        <div class="abs" style="left:190px; top:25px;">
-            ARDOT PRE-CONSTRUCTION PROJECT MONITORING
-        </div>
-
-        <div class="abs" style="left:710px; top:25px;">D158804</div>
-
-        <div class="abs" style="left:10px; top:50px;">SCREEN</div>
-        <div class="abs" style="left:90px; top:50px;">804</div>
-
-        <div class="abs" style="left:260px; top:50px;">
-            DELETE STANDARD REMARKS PANEL
-        </div>
-
-        <div class="abs" style="left:680px; top:50px;">
-            @Model.DateText
-        </div>
-
-        <div class="abs" style="left:10px; top:75px;">
-            =============================================================================
-        </div>
-
-        <div class="abs" style="left:10px; top:100px;">
-            FUNCTIONAL AREA
-        </div>
-
-        <input value="@Model.FunctionalArea"
-               maxlength="2"
-               readonly
-               tabindex="2"
-               class="legacy-input readonly"
-               style="left:180px; top:100px; width:26px;" />
-
-        <div class="abs" style="left:220px; top:100px;">
-            @Model.FunctionalAreaDescription
-        </div>
-
-        <div class="abs" style="left:620px; top:100px;">USER ID</div>
-
-        <div class="abs" style="left:710px; top:100px;">
-            @Model.UserId
-        </div>
-
-        <div class="abs" style="left:10px; top:125px;">
-            -----------------------------------------------------------------------------
-        </div>
-
-        <div class="abs" style="left:10px; top:150px;">
-            @Model.SourceText
-        </div>
-
-        <div class="abs" style="left:270px; top:150px;">
-            STANDARDIZED REMARKS
-        </div>
-
-        <div class="abs" style="left:40px; top:175px;">SEL</div>
-        <div class="abs" style="left:120px; top:175px;">FA</div>
-        <div class="abs" style="left:160px; top:175px;">TYPE</div>
-        <div class="abs" style="left:410px; top:175px;">REMARK</div>
-        <div class="abs" style="left:750px; top:175px;">DF</div>
-
-        @for (var i = 0; i < Model.Rows.Count; i++)
-        {
-            var row = Model.Rows[i];
-            var top = 200 + (i * 25);
-
-            var selectReadOnly = row.SelectionReadOnly ? "readonly" : null;
-            var deleteReadOnly = row.DeleteFlagReadOnly ? "readonly" : null;
-
-            var selectClass = row.SelectionReadOnly
-                ? "legacy-input readonly"
-                : "legacy-input";
-
-            var deleteClass = row.DeleteFlagReadOnly
-                ? "legacy-input readonly"
-                : "legacy-input";
-
-            <input name="Rows[@i].Selection"
-                   value="@row.Selection"
-                   maxlength="1"
-                   tabindex="@(3 + (i * 2))"
-                   readonly="@selectReadOnly"
-                   class="@selectClass"
-                   style="left:50px; top:@(top)px; width:18px;" />
-
-            <div class="abs" style="left:120px; top:@(top)px;">
-                @row.FunctionalArea
-            </div>
-
-            <div class="abs" style="left:170px; top:@(top)px;">
-                @row.RemarkType
-            </div>
-
-            <div class="abs" style="left:230px; top:@(top)px;">
-                @row.StandardRemark
-            </div>
-
-            <input name="Rows[@i].DeleteFlag"
-                   value="@row.DeleteFlag"
-                   maxlength="1"
-                   tabindex="@(4 + (i * 2))"
-                   readonly="@deleteReadOnly"
-                   class="@deleteClass"
-                   style="left:760px; top:@(top)px; width:18px;" />
-        }
-
-        <div class="abs" style="left:230px; top:475px;">
-            ENTER 'S' IN SEL, PRESS ENTER
-        </div>
-
-        <div class="abs" style="left:50px; top:500px;">THEN</div>
-
-        <div class="abs" style="left:100px; top:500px;">
-            ENTER 'D' OR ' ' IN DF TO RESET THE DELETE FLAG FOR THE REMARK
-        </div>
-
-        <div class="abs" style="left:10px; top:525px;">
-            -----------------------------------------------------------------------------
-        </div>
-
-        <button class="pf abs"
-                style="left:10px; top:550px;"
-                type="submit"
-                name="command"
-                value="F1"> F1=HELP</button>
-
-        <button class="pf abs"
-                style="left:100px; top:550px;"
-                type="submit"
-                name="command"
-                value="F3"> F3=PREV</button>
 
-        <button class="pf abs"
-                style="left:190px; top:550px;"
-                type="submit"
-                name="command"
-                value="F4"> F4=SCRLB</button>
-
-        <button class="pf abs"
-                style="left:290px; top:550px;"
-                type="submit"
-                name="command"
-                value="F5"> F5=SCRLF</button>
-
-        <button class="pf abs"
-                style="left:390px; top:550px;"
-                type="submit"
-                name="command"
-                value="F6"> F6=RESET</button>
-
-        <button class="pf abs"
-                style="left:490px; top:550px;"
-                type="submit"
-                name="command"
-                value="F12"> F12=MAIN</button>
-
-        @* ENTER=ACCEPT is initially invisible in the legacy ASPX. *@
-
-        <div class="abs error"
-             style="left:10px; top:575px;">
-            @Model.ErrorMessage
-        </div>
-    </div>
-</form>
-
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const action = document.querySelector('input[name="Action"]');
-
-        if (action) {
-            action.focus();
-        }
-
-        document.querySelectorAll('input[type="text"], input:not([type])')
-            .forEach(function (input) {
-                input.addEventListener("input", function () {
-                    this.value = this.value.toUpperCase();
-                });
-            });
-    });
-
-    document.addEventListener("keydown", function (event) {
-        const supported = ["F1", "F3", "F4", "F5", "F6", "F12"];
-
-        if (!supported.includes(event.key))
-            return;
-
-        event.preventDefault();
-
-        const form = document.getElementById("legacyForm");
-        const command = document.createElement("input");
-
-        command.type = "hidden";
-        command.name = "command";
-        command.value = event.key;
-
-        form.appendChild(command);
-        form.submit();
-    });
-</script>
-</body>
-</html>
-
-
-
-
-
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-
-namespace PCPM.Pages;
-
-public class D158804Model : PageModel
-{
-    [BindProperty]
-    public string Action { get; set; } = string.Empty;
-
-    [BindProperty]
-    public List<StandardRemarkRow> Rows { get; set; } = CreateRows();
-
-    public string DateText { get; set; } = string.Empty;
-
-    public string FunctionalArea { get; set; } = string.Empty;
-
-    public string FunctionalAreaDescription { get; set; } = string.Empty;
-
-    public string UserId { get; set; } = string.Empty;
-
-    public string SourceText { get; set; } = string.Empty;
-
-    public string ErrorMessage { get; set; } = string.Empty;
-
-    public string OfflineMessage { get; set; } = string.Empty;
-
-    public async Task OnGetAsync(
-        string? fa = null,
-        string? userId = null)
-    {
-        DateText = DateTime.Today.ToString("MM/dd/yyyy");
-
-        FunctionalArea = Normalize(fa, 2);
-        UserId = Normalize(userId, 7);
-
-        EnsureRows();
-
-        await LoadScreenAsync();
-    }
-
-    public async Task<IActionResult> OnPostAsync(string? command)
-    {
-        Action = Normalize(Action, 3);
-
-        EnsureRows();
-
-        foreach (var row in Rows)
-        {
-            row.Selection = Normalize(row.Selection, 1);
-            row.DeleteFlag = Normalize(row.DeleteFlag, 1);
-        }
-
-        /*
-         * IMPORTANT:
-         * The display-only fields must ultimately be reloaded here from the
-         * Application/Infrastructure layer rather than trusted from the browser.
-         */
-        await LoadScreenAsync();
-
-        switch (command?.ToUpperInvariant())
-        {
-            case "F6":
-                foreach (var row in Rows)
-                {
-                    row.Selection = string.Empty;
-                    row.DeleteFlag = string.Empty;
-                }
-
-                ErrorMessage = string.Empty;
-                return Page();
-
-            case "F12":
-                return RedirectToPage("/D158000");
-
-            case "F3":
-                return PreviousOrMain();
-
-            case "F1":
-                ErrorMessage =
-                    "TODO: wire D158804 help routing to the migrated help service/page.";
-                return Page();
-
-            case "F4":
-                ErrorMessage =
-                    "TODO: implement legacy SCRLB behavior from the D158804 business COBOL.";
-                return Page();
-
-            case "F5":
-                ErrorMessage =
-                    "TODO: implement legacy SCRLF behavior from the D158804 business COBOL.";
-                return Page();
-        }
-
-        /*
-         * Do not implement delete/undelete behavior here until the business
-         * COBOL or equivalent repository/service contract establishes:
-         *
-         * - record identity
-         * - authorization
-         * - SELECT='S' processing
-         * - DELFLAG update rules
-         * - paging/scroll behavior
-         * - exact messages
-         */
-
-        return Page();
-    }
-
-    private async Task LoadScreenAsync()
-    {
-        /*
-         * TODO:
-         * Call the Application service that loads D158804.
-         *
-         * The legacy screen contains exactly 11 rows.
-         *
-         * ASPX initial state:
-         *   SELECT fields  -> readonly / LightGray
-         *   DELFLAG fields -> readonly / LightGray
-         *
-         * The legacy business program may dynamically change those attributes.
-         *
-         * Example future mapping:
-         *
-         * var screen = await _service.GetDeleteStandardRemarksAsync(...);
-         *
-         * FunctionalArea = screen.FunctionalArea;
-         * FunctionalAreaDescription = screen.FunctionalAreaDescription;
-         * UserId = screen.UserId;
-         * SourceText = screen.SourceText;
-         * Rows = screen.Rows.Select(...).ToList();
-         */
-
-        EnsureRows();
-
-        await Task.CompletedTask;
-    }
-
-    private IActionResult PreviousOrMain()
-    {
-        var referer = Request.Headers.Referer.ToString();
-
-        if (Uri.TryCreate(referer, UriKind.Absolute, out var uri) &&
-            string.Equals(
-                uri.Authority,
-                Request.Host.Value,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return LocalRedirect(uri.PathAndQuery);
-        }
-
-        return RedirectToPage("/D158000");
-    }
-
-    private void EnsureRows()
-    {
-        Rows ??= new List<StandardRemarkRow>();
-
-        while (Rows.Count < 11)
-            Rows.Add(new StandardRemarkRow());
-
-        if (Rows.Count > 11)
-            Rows = Rows.Take(11).ToList();
-    }
-
-    private static List<StandardRemarkRow> CreateRows()
-    {
-        return Enumerable.Range(0, 11)
-            .Select(_ => new StandardRemarkRow())
-            .ToList();
-    }
-
-    private static string Normalize(string? value, int maxLength)
-    {
-        var result = (value ?? string.Empty)
-            .Trim()
-            .ToUpperInvariant();
-
-        return result.Length <= maxLength
-            ? result
-            : result[..maxLength];
-    }
-
-    public sealed class StandardRemarkRow
-    {
-        public string Selection { get; set; } = string.Empty;
-
-        public string FunctionalArea { get; set; } = string.Empty;
-
-        public string RemarkType { get; set; } = string.Empty;
-
-        public string StandardRemark { get; set; } = string.Empty;
-
-        public string DeleteFlag { get; set; } = string.Empty;
-
-        /*
-         * These are intentionally true initially because that is what the
-         * supplied D158804 ASPX specifies.
-         *
-         * Set them from migrated business-state/attribute information.
-         */
-        public bool SelectionReadOnly { get; set; } = true;
-
-        public bool DeleteFlagReadOnly { get; set; } = true;
-    }
-}
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+def validate_config() -> None:
+    if UAT_PROJECT == "REPLACE_WITH_UAT_PROJECT_ID":
+        raise ValueError(
+            "Set UAT_PROJECT to the real UAT GCP project ID, either in this file "
+            "or as an environment variable."
+        )
+
+    for name, cfg in TARGETS.items():
+        if cfg["project"] == SOURCE_PROJECT:
+            raise ValueError(f"{name} project must not be the PROD source project.")
+
+
+def make_client(project: str, database: str) -> firestore.Client:
+    return firestore.Client(project=project, database=database)
+
+
+def get_document_count(collection_ref) -> int:
+    """Return the number of documents using Firestore's COUNT aggregation."""
+    results = collection_ref.count(alias="total").get()
+    if not results:
+        return 0
+    return int(results[0][0].value)
+
+
+def iter_documents(collection_ref) -> Iterator:
+    """Page through the entire collection ordered by document ID."""
+    last_snapshot = None
+
+    while True:
+        query = (
+            collection_ref
+            .order_by(FieldPath.document_id())
+            .limit(READ_PAGE_SIZE)
+        )
+
+        if last_snapshot is not None:
+            query = query.start_after(last_snapshot)
+
+        page = list(query.stream())
+        if not page:
+            return
+
+        for snapshot in page:
+            yield snapshot
+
+        last_snapshot = page[-1]
+
+        if len(page) < READ_PAGE_SIZE:
+            return
+
+
+def format_duration(seconds: float) -> str:
+    if seconds == float("inf"):
+        return "unknown"
+
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
+def print_progress(
+    processed: int,
+    total: int,
+    started_at: float,
+    logical_batch_number: int,
+    target_count: int,
+) -> None:
+    elapsed = max(time.monotonic() - started_at, 0.001)
+    docs_per_second = processed / elapsed
+
+    if total > 0:
+        percentage = min(100.0, (processed / total) * 100.0)
+        remaining = max(total - processed, 0)
+        eta = remaining / docs_per_second if docs_per_second > 0 else float("inf")
+    else:
+        percentage = 100.0
+        eta = 0
+
+    completed_target_writes = processed * target_count
+
+    print(
+        f"[batch {logical_batch_number:,}] "
+        f"{processed:,}/{total:,} docs | "
+        f"{percentage:6.2f}% | "
+        f"{docs_per_second:,.1f} source docs/s | "
+        f"{completed_target_writes:,} target writes completed | "
+        f"ETA {format_duration(eta)}",
+        flush=True,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Sync
+# -----------------------------------------------------------------------------
+def sync_collection() -> None:
+    validate_config()
+
+    print("Creating Firestore clients...")
+    source_db = make_client(SOURCE_PROJECT, SOURCE_DATABASE)
+    source_collection = source_db.collection(SOURCE_COLLECTION)
+
+    target_clients: Dict[str, firestore.Client] = {}
+    target_collections = {}
+    writers = {}
+
+    for name, cfg in TARGETS.items():
+        client = make_client(cfg["project"], cfg["database"])
+        target_clients[name] = client
+        target_collections[name] = client.collection(cfg["collection"])
+        writers[name] = client.bulk_writer()
+
+    print(
+        f"Source: {SOURCE_PROJECT}/{SOURCE_DATABASE}/{SOURCE_COLLECTION}\n"
+        + "\n".join(
+            f"Target {name}: {cfg['project']}/{cfg['database']}/{cfg['collection']}"
+            for name, cfg in TARGETS.items()
+        )
+    )
+
+    print("Counting PROD documents...")
+    total = get_document_count(source_collection)
+    print(f"PROD documents to sync: {total:,}")
+
+    if total == 0:
+        print("Nothing to sync.")
+        return
+
+    started_at = time.monotonic()
+    processed = 0
+    docs_since_flush = 0
+    logical_batch_number = 0
+    last_document_id = None
+
+    try:
+        for snapshot in iter_documents(source_collection):
+            data = snapshot.to_dict() or {}
+            document_id = snapshot.id
+            last_document_id = document_id
+
+            # Queue the same document to every configured lower environment.
+            # merge=False means the target document is replaced with PROD's fields.
+            for name, target_collection in target_collections.items():
+                target_ref = target_collection.document(document_id)
+                writers[name].set(target_ref, data, merge=False)
+
+            processed += 1
+            docs_since_flush += 1
+
+            # 20,000 is the application-level batch/checkpoint. BulkWriter itself
+            # safely breaks those writes into smaller parallel Firestore requests.
+            if docs_since_flush >= LOGICAL_BATCH_SIZE:
+                logical_batch_number += 1
+
+                # flush() blocks until all queued writes for that writer are complete,
+                # so the percentage printed below represents completed work.
+                for writer in writers.values():
+                    writer.flush()
+
+                print_progress(
+                    processed=processed,
+                    total=total,
+                    started_at=started_at,
+                    logical_batch_number=logical_batch_number,
+                    target_count=len(TARGETS),
+                )
+
+                print(f"Checkpoint document ID: {last_document_id}", flush=True)
+                docs_since_flush = 0
+
+        # Final partial logical batch.
+        if docs_since_flush > 0:
+            logical_batch_number += 1
+            for writer in writers.values():
+                writer.flush()
+
+            print_progress(
+                processed=processed,
+                total=total,
+                started_at=started_at,
+                logical_batch_number=logical_batch_number,
+                target_count=len(TARGETS),
+            )
+
+        elapsed = time.monotonic() - started_at
+        print(
+            "\nSync completed successfully.\n"
+            f"Source documents synced: {processed:,}\n"
+            f"Total target writes: {processed * len(TARGETS):,}\n"
+            f"Elapsed: {format_duration(elapsed)}"
+        )
+
+    finally:
+        # close() waits for any remaining pooled operations and then shuts down.
+        for writer in writers.values():
+            writer.close()
+
+
+if __name__ == "__main__":
+    sync_collection()
