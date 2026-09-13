@@ -1,297 +1,1027 @@
-import csv
-import time
-from typing import Dict, Iterable, List, Tuple
+using System.Globalization;
 
-from google.cloud import firestore
-from google.api_core.exceptions import (
-    DeadlineExceeded,
-    ServiceUnavailable,
-    InternalServerError,
-    Aborted,
-    ResourceExhausted,
-)
+namespace PCPM.Application.D158500;
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
+public sealed class D158500Service : ID158500Service
+{
+    private readonly ID158500Repository _repository;
 
-INPUT_FILE = "TEST_IDH_20260319035117.txt"
-
-# Your existing IDH file uses ^ as the delimiter.
-# Change to "," if the incoming file is a normal comma-separated CSV.
-DELIMITER = "^"
-
-# Set True if the incoming file already contains a header row.
-# Leave False if it has no header and follows the field order below.
-HAS_HEADER = False
-
-PROJECT_ID = "gcp-emp-ep-dev"
-COLLECTION_NAME = "Employees"
-
-# Keep below Firestore's 500-write batch limit.
-BATCH_SIZE = 450
-
-# IMPORTANT:
-# Replace these TWO values with the exact Firestore field names
-# that should be updated when the employee already exists.
-UPDATE_FIELDS = [
-    "COLUMN_A_FIELD_NAME",
-    "COLUMN_B_FIELD_NAME",
-]
-
-FIELDS = [
-    "employeeID",
-    "firstName",
-    "lastName",
-    "middleName",
-    "preferredEmail",
-    "jobCode",
-    "originalHireDate",
-    "reHireDate",
-    "terminatedDate",
-    "workerType",
-    "homePostalCode",
-    "unionLocal",
-    "unionType",
-    "employmentStatus",
-    "systemIdentifier",
-    "centerCode",
-    "jobOperationType",
-    "jobFunctionCode",
-    "jobFamily",
-    "jobGroupCode",
-    "regionID",
-    "districtID",
-    "fullTimeIndicator",
-    "sortType",
-    "managerID",
-    "buildingMnemonic",
-    "firstNameAlternative",
-    "middleNameAlternative",
-    "lastNameAlternative",
-    "primaryPhoneNumber",
-    "workPhoneNumber",
-    "birthdate",
-    "companyCode",
-    "companyName",
-    "jobLevelName",
-    "jobFunctionName",
-    "regionName",
-    "districtName",
-    "homeLocationAddress1",
-    "homeLocationAddress2",
-    "homeLocationCity",
-    "homeLocationState",
-    "homeLocationCountry",
-    "jobTitle",
-    "workLocationNameHost",
-    "workLocationAddress1Host",
-    "workLocationAddress2Host",
-    "workLocationCityHost",
-    "workLocationStateHost",
-    "workLocationCountryHost",
-    "workLocationNameHome",
-    "workLocationAddress1Home",
-    "workLocationAddress2Home",
-    "workLocationCityHome",
-    "workLocationStateHome",
-    "workLocationCountryHome",
-    "workEmailAddress",
-]
-
-MAX_RETRIES = 8
-BASE_RETRY_SECONDS = 2
-
-RETRYABLE_EXCEPTIONS = (
-    DeadlineExceeded,
-    ServiceUnavailable,
-    InternalServerError,
-    Aborted,
-    ResourceExhausted,
-)
-
-store = firestore.Client(project=PROJECT_ID)
-
-
-def retry(operation_name, fn):
-    """Retry transient Google/Firestore failures with exponential backoff."""
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            return fn()
-        except RETRYABLE_EXCEPTIONS as exc:
-            if attempt == MAX_RETRIES:
-                raise
-            sleep_seconds = min(60, BASE_RETRY_SECONDS * (2 ** (attempt - 1)))
-            print(
-                f"WARNING: {operation_name} failed: {type(exc).__name__}: {exc}\n"
-                f"Retry {attempt}/{MAX_RETRIES} in {sleep_seconds}s..."
-            )
-            time.sleep(sleep_seconds)
-
-
-def normalize_record(row: Dict[str, str]) -> Dict[str, str]:
-    row = {
-        (key.strip() if isinstance(key, str) else key):
-        (value.strip() if isinstance(value, str) else value)
-        for key, value in row.items()
-        if key is not None
+    public D158500Service(ID158500Repository repository)
+    {
+        _repository = repository;
     }
 
-    email = row.get("workEmailAddress")
-    if isinstance(email, str):
-        row["workEmailAddress"] = email.lower()
+    // ---------------------------------------------------------------------
+    // Legacy functional-area positions recovered from P158500.CBL.
+    //
+    // PC and VE are special:
+    //   PC -> Programmed Construction End
+    //   VE -> Value Engineering Percent
+    //
+    // Therefore only positions 1-11 appear in the normal status rows.
+    // ---------------------------------------------------------------------
 
-    row["homeCountryCode"] = row.get("homeLocationCountry")
-    return row
+    private static readonly string[] DetailFunctionalAreas =
+    {
+        "BR",
+        "DS",
+        "EN",
+        "GT",
+        "PS",
+        "PA",
+        "RR",
+        "RW",
+        "RD",
+        "TR",
+        "UT"
+    };
 
+    // =====================================================================
+    // LOAD
+    // =====================================================================
 
-def iter_valid_records() -> Iterable[Dict[str, str]]:
-    with open(INPUT_FILE, "r", encoding="utf-8-sig", newline="") as f:
-        if HAS_HEADER:
-            reader = csv.DictReader(f, delimiter=DELIMITER)
-        else:
-            lines = ("empty_record" if line.isspace() else line for line in f)
-            reader = csv.DictReader(lines, fieldnames=FIELDS, delimiter=DELIMITER)
+    public async Task<D158500Screen> LoadAsync(
+        string? jobNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var requestedJobNumber = Normalize(jobNumber);
 
-        for row in reader:
-            row = normalize_record(dict(row))
-            emp_id = str(row.get("employeeID", "") or "").strip()
+        var screen = await CreateBaseScreenAsync(cancellationToken);
 
-            if not emp_id:
-                continue
-            if emp_id == "empty_record" or emp_id.startswith("TRL"):
-                continue
-            if "/" in emp_id:
-                print(f"WARNING: Skipping invalid employeeID: {emp_id}")
-                continue
+        // Legacy LOAD-JOBREC:
+        //
+        // FOR FIRST V158-JOB104R0
+        //   WHERE STATUS = '01'
+        //     AND DELFLAG = SPACES
+        //     AND JOBNO >= W-JOBNO
+        //
+        // The repository implements the physical database equivalent.
 
-            row["employeeID"] = emp_id
-            yield row
+        var job = await _repository.FindJobAsync(
+            requestedJobNumber,
+            cancellationToken);
 
+        if (job is null)
+        {
+            screen.JobNumber = requestedJobNumber;
 
-def chunks(iterable: Iterable[Dict[str, str]], size: int):
-    chunk: List[Dict[str, str]] = []
-    for item in iterable:
-        chunk.append(item)
-        if len(chunk) >= size:
-            yield chunk
-            chunk = []
-    if chunk:
-        yield chunk
+            screen.ErrorMessage = await GetMessageAsync(
+                "E00003",
+                "NO RECORDS FOUND AT ALL",
+                cancellationToken);
 
+            return screen;
+        }
 
-def validate_update_fields():
-    if len(UPDATE_FIELDS) != 2:
-        raise ValueError("UPDATE_FIELDS must contain exactly two field names.")
+        await LoadJobIntoScreenAsync(
+            screen,
+            job,
+            cancellationToken);
 
-    placeholders = {"COLUMN_A_FIELD_NAME", "COLUMN_B_FIELD_NAME"}
-    if any(field in placeholders for field in UPDATE_FIELDS):
-        raise ValueError(
-            "Set UPDATE_FIELDS to the exact two fields you want to update "
-            "for existing employees before running this script."
-        )
+        // Legacy behavior:
+        // if the exact requested job did not exist but a subsequent job
+        // was returned, display:
+        //
+        // W00003 - NEXT JOB RECORD RETURNED
 
+        if (!string.IsNullOrWhiteSpace(requestedJobNumber) &&
+            !string.Equals(
+                requestedJobNumber,
+                job.JobNumber?.Trim(),
+                StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(screen.ErrorMessage))
+        {
+            screen.ErrorMessage = await GetMessageAsync(
+                "W00003",
+                "NEXT JOB RECORD RETURNED",
+                cancellationToken);
+        }
 
-def process_chunk(records: List[Dict[str, str]]) -> Tuple[int, int, int]:
-    collection = store.collection(COLLECTION_NAME)
-
-    records_by_id = {
-        str(record["employeeID"]): record
-        for record in records
+        return screen;
     }
 
-    refs_by_id = {
-        emp_id: collection.document(emp_id)
-        for emp_id in records_by_id
+    // =====================================================================
+    // RESET - F6
+    // =====================================================================
+
+    public async Task<D158500Screen> ResetAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // COBOL PF6:
+        //
+        // REFRESH D158500
+        // SET D158500.DATE = $DATE('MM/DD/YEAR')
+        // SET SCREEN-RESET = TRUE
+        // DO LOAD-FUNC-AREA
+        // DO PROTECT-SELECT
+        //
+        // DB/business-wise we simply create a fresh base screen.
+        // Field protection is handled by Razor/UI state.
+
+        var screen = await CreateBaseScreenAsync(cancellationToken);
+
+        screen.ScreenReset = true;
+
+        screen.JobNumber = "";
+        screen.JobName = "";
+        screen.PcEnd = "";
+        screen.VePercent = "N/A";
+        screen.LatestRemark = "";
+        screen.ErrorMessage = "";
+
+        return screen;
     }
 
-    snapshots = retry(
-        "Firestore employee lookup",
-        lambda: list(store.get_all(list(refs_by_id.values()))),
-    )
+    // =====================================================================
+    // F8 - SCROLL FORWARD
+    // =====================================================================
 
-    existing_ids = {
-        snapshot.id
-        for snapshot in snapshots
-        if snapshot.exists
+    public async Task<D158500Screen> ScrollForwardAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var currentJobNumber = Normalize(jobNumber);
+
+        // Legacy SCROLL-FORWARD:
+        //
+        // FOR FIRST V158-JOB104R0
+        // WHERE STATUS = '01'
+        //   AND DELFLAG = SPACES
+        //   AND JOBNO > W-JOBNO
+        // ORDERED BY ASCENDING ...
+
+        var nextJob = await _repository.FindNextJobAsync(
+            currentJobNumber,
+            cancellationToken);
+
+        if (nextJob is null)
+        {
+            var currentScreen = await LoadCurrentForNavigationErrorAsync(
+                currentJobNumber,
+                cancellationToken);
+
+            currentScreen.ErrorMessage = await GetMessageAsync(
+                "U00007",
+                "END OF FILE",
+                cancellationToken);
+
+            return currentScreen;
+        }
+
+        var screen = await CreateBaseScreenAsync(cancellationToken);
+
+        await LoadJobIntoScreenAsync(
+            screen,
+            nextJob,
+            cancellationToken);
+
+        return screen;
     }
 
-    batch = store.batch()
+    // =====================================================================
+    // F7 - SCROLL BACKWARD
+    // =====================================================================
 
-    inserted = 0
-    updated = 0
-    skipped = 0
+    public async Task<D158500Screen> ScrollBackwardAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var currentJobNumber = Normalize(jobNumber);
 
-    for emp_id, record in records_by_id.items():
-        doc_ref = refs_by_id[emp_id]
+        // Legacy SCROLL-BACKWARD:
+        //
+        // FOR FIRST V158-JOB104R0
+        // WHERE STATUS = '01'
+        //   AND DELFLAG = SPACES
+        //   AND JOBNO < W-JOBNO
+        // ORDERED BY DESCENDING ...
 
-        if emp_id in existing_ids:
-            update_data = {}
+        var previousJob = await _repository.FindPreviousJobAsync(
+            currentJobNumber,
+            cancellationToken);
 
-            for field in UPDATE_FIELDS:
-                if field not in record:
-                    print(
-                        f"WARNING: Employee {emp_id}: incoming row does not contain "
-                        f"'{field}'. Field not updated."
-                    )
-                    continue
-                update_data[field] = record[field]
+        if (previousJob is null)
+        {
+            var currentScreen = await LoadCurrentForNavigationErrorAsync(
+                currentJobNumber,
+                cancellationToken);
 
-            if update_data:
-                batch.update(doc_ref, update_data)
-                updated += 1
-            else:
-                skipped += 1
+            currentScreen.ErrorMessage = await GetMessageAsync(
+                "W00006",
+                "BEGINNING OF FILE",
+                cancellationToken);
 
-        else:
-            batch.set(doc_ref, record)
-            inserted += 1
+            return currentScreen;
+        }
 
-    retry("Firestore batch commit", batch.commit)
-    return inserted, updated, skipped
+        var screen = await CreateBaseScreenAsync(cancellationToken);
 
+        await LoadJobIntoScreenAsync(
+            screen,
+            previousJob,
+            cancellationToken);
 
-def main():
-    validate_update_fields()
+        return screen;
+    }
 
-    print(f"Project:    {PROJECT_ID}")
-    print(f"Collection: {COLLECTION_NAME}")
-    print(f"Input:      {INPUT_FILE}")
-    print(f"Delimiter:  {repr(DELIMITER)}")
-    print(f"Update existing employees ONLY in: {UPDATE_FIELDS}")
-    print()
+    // =====================================================================
+    // ENTER
+    // =====================================================================
 
-    processed = 0
-    total_inserted = 0
-    total_updated = 0
-    total_skipped = 0
-    batch_number = 0
+    public async Task<D158500Result> ProcessEnterAsync(
+        D158500Input input,
+        CancellationToken cancellationToken = default)
+    {
+        input ??= new D158500Input();
 
-    for batch_records in chunks(iter_valid_records(), BATCH_SIZE):
-        batch_number += 1
+        NormalizeInput(input);
 
-        inserted, updated, skipped = process_chunk(batch_records)
+        // -------------------------------------------------------------
+        // COBOL CHECK-CONFLICT
+        // -------------------------------------------------------------
 
-        processed += len(batch_records)
-        total_inserted += inserted
-        total_updated += updated
-        total_skipped += skipped
+        var recordSelectionCount = CountRecordSelections(input);
 
-        print(
-            f"[Batch {batch_number}] "
-            f"processed={processed:,} | "
-            f"inserted={total_inserted:,} | "
-            f"updated={total_updated:,} | "
-            f"skipped={total_skipped:,}"
-        )
+        var actionEntered =
+            !string.IsNullOrWhiteSpace(input.Action);
 
-    print()
-    print("Employee load complete")
-    print(f"Processed: {processed:,}")
-    print(f"Inserted:  {total_inserted:,}")
-    print(f"Updated:   {total_updated:,}")
-    print(f"Skipped:   {total_skipped:,}")
+        var recordSelected =
+            recordSelectionCount > 0;
 
+        // More than one record navigation selection is a conflict.
+        if (recordSelectionCount > 1)
+        {
+            return await ErrorResultAsync(
+                input,
+                "E00016",
+                "NAVIGATION CONFLICT",
+                cancellationToken);
+        }
 
-if __name__ == "__main__":
-    main()
+        // Action plus a record selector is also a navigation conflict.
+        if (actionEntered && recordSelected)
+        {
+            return await ErrorResultAsync(
+                input,
+                "E00016",
+                "NAVIGATION CONFLICT",
+                cancellationToken);
+        }
+
+        // -------------------------------------------------------------
+        // ACTION
+        // -------------------------------------------------------------
+
+        if (actionEntered)
+        {
+            return await ProcessActionAsync(
+                input,
+                cancellationToken);
+        }
+
+        // -------------------------------------------------------------
+        // SUMMARY FUNCTION
+        //
+        // COBOL SELECT-RECORD:
+        //
+        // IF D158500.SF NOT = SPACES
+        //    WHEN 'S'
+        //       SET W-NEXT = '510'
+        //    WHEN OTHER
+        //       E00012 INVALID SELECTION CODE
+        // -------------------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(input.SummaryFunction))
+        {
+            if (input.SummaryFunction == "S")
+            {
+                return new D158500Result
+                {
+                    DestinationPage = "510"
+                };
+            }
+
+            return await ErrorResultAsync(
+                input,
+                "E00012",
+                "INVALID SELECTION CODE",
+                cancellationToken);
+        }
+
+        // -------------------------------------------------------------
+        // REMARK SELECTION
+        //
+        // IF D158500.SELREM NOT = SPACES
+        //    WHEN 'S'
+        //       SET W-NEXT = '550'
+        // -------------------------------------------------------------
+
+        if (!string.IsNullOrWhiteSpace(input.RemarkSelection))
+        {
+            if (input.RemarkSelection == "S")
+            {
+                return new D158500Result
+                {
+                    DestinationPage = "550"
+                };
+            }
+
+            return await ErrorResultAsync(
+                input,
+                "E00012",
+                "INVALID SELECTION CODE",
+                cancellationToken);
+        }
+
+        // -------------------------------------------------------------
+        // STATUS ROW
+        // -------------------------------------------------------------
+
+        var selectedRow = input.Rows
+            .FirstOrDefault(
+                x => !string.IsNullOrWhiteSpace(x.Selection));
+
+        if (selectedRow is not null)
+        {
+            return await ProcessStatusSelectionAsync(
+                input,
+                selectedRow,
+                cancellationToken);
+        }
+
+        // -------------------------------------------------------------
+        // NO ACTION / NO SELECTION
+        //
+        // The old program distinguishes:
+        //
+        //   user changed JOBNO -> reload screen 500
+        //
+        // versus:
+        //
+        //   same JOBNO and no selection -> E00004
+        //
+        // If JOBNO is blank, the old code also reloads 500, which
+        // results in the first available job.
+        // -------------------------------------------------------------
+
+        var newJobNumber =
+            !string.Equals(
+                Normalize(input.JobNumber),
+                Normalize(input.OriginalJobNumber),
+                StringComparison.OrdinalIgnoreCase);
+
+        if (newJobNumber ||
+            string.IsNullOrWhiteSpace(input.JobNumber))
+        {
+            var screen = await LoadAsync(
+                input.JobNumber,
+                cancellationToken);
+
+            return new D158500Result
+            {
+                Screen = screen
+            };
+        }
+
+        return await ErrorResultAsync(
+            input,
+            "E00004",
+            "SELECTION NOT SPECIFIED",
+            cancellationToken);
+    }
+
+    // =====================================================================
+    // ACTION PROCESSING
+    // =====================================================================
+
+    private async Task<D158500Result> ProcessActionAsync(
+        D158500Input input,
+        CancellationToken cancellationToken)
+    {
+        var action = Normalize(input.Action).ToUpperInvariant();
+
+        // COBOL VALIDATE-ACTION:
+        //
+        // IF ACTION = 'SO'
+        //    OR ACTION is numeric
+        //       VALID-ACTION = TRUE
+        //
+        // otherwise:
+        // E00002 INVALID ACTION CODE
+
+        if (!IsValidAction(action))
+        {
+            return await ErrorResultAsync(
+                input,
+                "E00002",
+                "INVALID ACTION CODE",
+                cancellationToken);
+        }
+
+        // The legacy program puts ACTION directly into W-NEXT.
+        //
+        // Numeric values therefore represent screen/navigation codes.
+        //
+        // "SO" is also explicitly valid in the COBOL, but its ultimate
+        // target depends on the surrounding PCPM navigation framework.
+        //
+        // Do NOT convert "SO" to D158SO in the PageModel.
+        // Handle/match "SO" according to the existing PCPM navigation
+        // implementation when that target is identified.
+
+        return new D158500Result
+        {
+            DestinationPage = action
+        };
+    }
+
+    // =====================================================================
+    // STATUS ROW SELECTION
+    // =====================================================================
+
+    private async Task<D158500Result> ProcessStatusSelectionAsync(
+        D158500Input input,
+        D158500RowInput selectedRow,
+        CancellationToken cancellationToken)
+    {
+        var selection =
+            Normalize(selectedRow.Selection).ToUpperInvariant();
+
+        var functionalArea =
+            Normalize(selectedRow.FunctionalArea).ToUpperInvariant();
+
+        // Ensure the status row contains a legitimate functional area.
+        if (GetFunctionalAreaIndex(functionalArea) == 0)
+        {
+            return await ErrorResultAsync(
+                input,
+                "E00020",
+                "INVALID FA ON STATUS RECORD",
+                cancellationToken);
+        }
+
+        // COBOL LOAD-SCREEN-ID:
+        //
+        // S or I:
+        //   W-FA   = FUNC-AREA(I)
+        //   W-NEXT = 302
+        //
+        // U:
+        //   W-FA   = FUNC-AREA(I)
+        //   W-NEXT = 202
+        //
+        // other:
+        //   E00012 INVALID SELECTION CODE
+
+        switch (selection)
+        {
+            case "S":
+            case "I":
+                return new D158500Result
+                {
+                    DestinationPage = "302",
+                    FunctionalArea = functionalArea
+                };
+
+            case "U":
+                return new D158500Result
+                {
+                    DestinationPage = "202",
+                    FunctionalArea = functionalArea
+                };
+
+            default:
+                return await ErrorResultAsync(
+                    input,
+                    "E00012",
+                    "INVALID SELECTION CODE",
+                    cancellationToken);
+        }
+    }
+
+    // =====================================================================
+    // CREATE BASE SCREEN
+    // =====================================================================
+
+    private async Task<D158500Screen> CreateBaseScreenAsync(
+        CancellationToken cancellationToken)
+    {
+        var screen = new D158500Screen
+        {
+            PcEnd = "",
+            VePercent = "N/A",
+            LatestRemark = "",
+            ErrorMessage = "",
+            ScreenReset = false
+        };
+
+        // Legacy LOAD-FUNC-AREA uses V158-FAR104R0.
+        //
+        // We load descriptions from the repository, but the functional
+        // area ordering itself is known from the old business program.
+
+        var functionalAreas =
+            await _repository.GetFunctionalAreasAsync(cancellationToken);
+
+        var descriptions = functionalAreas
+            .Where(x => !string.IsNullOrWhiteSpace(x.FunctionalArea))
+            .GroupBy(
+                x => Normalize(x.FunctionalArea).ToUpperInvariant(),
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.First().Description?.Trim() ?? "",
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var functionalArea in DetailFunctionalAreas)
+        {
+            descriptions.TryGetValue(
+                functionalArea,
+                out var description);
+
+            screen.Rows.Add(
+                new D158500Row
+                {
+                    FunctionalArea = functionalArea,
+                    Description = description ?? "",
+                    StartDate = "",
+                    ProjectedEndDate = "",
+                    EndDate = "",
+                    Percent = "N/A",
+                    Status = "",
+                    Selection = ""
+                });
+        }
+
+        return screen;
+    }
+
+    // =====================================================================
+    // LOAD COMPLETE JOB
+    // =====================================================================
+
+    private async Task LoadJobIntoScreenAsync(
+        D158500Screen screen,
+        JobRecord job,
+        CancellationToken cancellationToken)
+    {
+        screen.JobNumber = Normalize(job.JobNumber);
+        screen.JobName = Normalize(job.JobName);
+
+        // If your D158500Screen model contains BidAmount, set it here:
+        //
+        // screen.BidAmount = job.BidAmount;
+
+        await LoadStatusRecordsAsync(
+            screen,
+            job.JobNumber,
+            cancellationToken);
+
+        await LoadRemarkAsync(
+            screen,
+            job.JobNumber,
+            cancellationToken);
+    }
+
+    // =====================================================================
+    // LOAD STATUS RECORDS
+    // =====================================================================
+
+    private async Task LoadStatusRecordsAsync(
+        D158500Screen screen,
+        string jobNumber,
+        CancellationToken cancellationToken)
+    {
+        var statuses =
+            await _repository.GetJobStatusesAsync(
+                jobNumber,
+                cancellationToken);
+
+        // Legacy LOAD-STAT-REC:
+        //
+        // WHEN NONE:
+        //   E00021 - NO STATUS RECORD FOUND
+
+        if (statuses.Count == 0)
+        {
+            screen.ErrorMessage = await GetMessageAsync(
+                "E00021",
+                "NO STATUS RECORD FOUND",
+                cancellationToken);
+
+            return;
+        }
+
+        foreach (var status in statuses)
+        {
+            var functionalArea =
+                Normalize(status.FunctionalArea)
+                    .ToUpperInvariant();
+
+            var functionalAreaIndex =
+                GetFunctionalAreaIndex(functionalArea);
+
+            if (functionalAreaIndex == 0)
+            {
+                screen.ErrorMessage = await GetMessageAsync(
+                    "E00020",
+                    "INVALID FA ON STATUS RECORD",
+                    cancellationToken);
+
+                continue;
+            }
+
+            // ---------------------------------------------------------
+            // PC = Programmed Construction
+            //
+            // COBOL index 12.
+            // PC-END is displayed separately from the 11 normal rows.
+            // ---------------------------------------------------------
+
+            if (functionalArea == "PC")
+            {
+                screen.PcEnd =
+                    FormatMonthYear(status.EndDate);
+
+                continue;
+            }
+
+            // ---------------------------------------------------------
+            // VE = Value Engineering
+            //
+            // COBOL index 13.
+            // VE percent is displayed separately.
+            // ---------------------------------------------------------
+
+            if (functionalArea == "VE")
+            {
+                screen.VePercent =
+                    string.IsNullOrWhiteSpace(status.Percent)
+                        ? "N/A"
+                        : status.Percent.Trim();
+
+                continue;
+            }
+
+            // ---------------------------------------------------------
+            // Normal detail status row
+            // ---------------------------------------------------------
+
+            var row = screen.Rows.FirstOrDefault(
+                x => string.Equals(
+                    x.FunctionalArea,
+                    functionalArea,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (row is null)
+            {
+                screen.ErrorMessage = await GetMessageAsync(
+                    "E00020",
+                    "INVALID FA ON STATUS RECORD",
+                    cancellationToken);
+
+                continue;
+            }
+
+            row.StartDate =
+                Normalize(status.StartDate);
+
+            row.ProjectedEndDate =
+                Normalize(status.ProjectedEndDate);
+
+            row.EndDate =
+                Normalize(status.EndDate);
+
+            row.Percent =
+                string.IsNullOrWhiteSpace(status.Percent)
+                    ? "N/A"
+                    : status.Percent.Trim();
+
+            row.Status =
+                Normalize(status.Status);
+        }
+    }
+
+    // =====================================================================
+    // LATEST REMARK
+    // =====================================================================
+
+    private async Task LoadRemarkAsync(
+        D158500Screen screen,
+        string jobNumber,
+        CancellationToken cancellationToken)
+    {
+        // Repository implementation should reproduce:
+        //
+        // DELFLAG = spaces
+        // HIST-FLAG = 'N'
+        // JOBNO = current job
+        // latest/highest applicable remark record
+
+        var remark =
+            await _repository.GetLatestRemarkAsync(
+                jobNumber,
+                cancellationToken);
+
+        if (remark is null)
+        {
+            screen.LatestRemark = "";
+            return;
+        }
+
+        screen.LatestRemark =
+            remark.Remark?.TrimEnd() ?? "";
+    }
+
+    // =====================================================================
+    // ERROR RESULT
+    // =====================================================================
+
+    private async Task<D158500Result> ErrorResultAsync(
+        D158500Input input,
+        string messageId,
+        string fallbackMessage,
+        CancellationToken cancellationToken)
+    {
+        // Reload display-only information from the database.
+        //
+        // This is preferable to trusting hidden/browser-posted values.
+
+        var jobNumber =
+            !string.IsNullOrWhiteSpace(input.OriginalJobNumber)
+                ? input.OriginalJobNumber
+                : input.JobNumber;
+
+        var screen = await LoadCurrentForNavigationErrorAsync(
+            jobNumber,
+            cancellationToken);
+
+        screen.ErrorMessage = await GetMessageAsync(
+            messageId,
+            fallbackMessage,
+            cancellationToken);
+
+        return new D158500Result
+        {
+            Screen = screen
+        };
+    }
+
+    // =====================================================================
+    // RELOAD CURRENT SCREEN FOR ERROR REDISPLAY
+    // =====================================================================
+
+    private async Task<D158500Screen>
+        LoadCurrentForNavigationErrorAsync(
+            string jobNumber,
+            CancellationToken cancellationToken)
+    {
+        var normalizedJobNumber = Normalize(jobNumber);
+
+        if (string.IsNullOrWhiteSpace(normalizedJobNumber))
+        {
+            return await CreateBaseScreenAsync(
+                cancellationToken);
+        }
+
+        var job = await _repository.FindJobAsync(
+            normalizedJobNumber,
+            cancellationToken);
+
+        var screen =
+            await CreateBaseScreenAsync(cancellationToken);
+
+        if (job is null)
+        {
+            screen.JobNumber = normalizedJobNumber;
+            return screen;
+        }
+
+        await LoadJobIntoScreenAsync(
+            screen,
+            job,
+            cancellationToken);
+
+        // Clear anything LoadAsync-style loading might have produced.
+        // The caller is about to put the navigation error onto the screen.
+        screen.ErrorMessage = "";
+
+        return screen;
+    }
+
+    // =====================================================================
+    // NAVIGATION CONFLICT COUNTING
+    // =====================================================================
+
+    private static int CountRecordSelections(
+        D158500Input input)
+    {
+        var count = 0;
+
+        if (!string.IsNullOrWhiteSpace(
+                input.SummaryFunction))
+        {
+            count++;
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                input.RemarkSelection))
+        {
+            count++;
+        }
+
+        foreach (var row in input.Rows)
+        {
+            if (!string.IsNullOrWhiteSpace(
+                    row.Selection))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    // =====================================================================
+    // ACTION VALIDATION
+    // =====================================================================
+
+    private static bool IsValidAction(
+        string? action)
+    {
+        action = Normalize(action).ToUpperInvariant();
+
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return true;
+        }
+
+        if (action == "SO")
+        {
+            return true;
+        }
+
+        // Max length is 3 on the legacy screen.
+        if (action.Length > 3)
+        {
+            return false;
+        }
+
+        return action.All(char.IsDigit);
+    }
+
+    // =====================================================================
+    // FUNCTIONAL AREA POSITION
+    //
+    // Recovered directly from CHECK-FUNC-AREA in P158500.CBL.
+    // =====================================================================
+
+    private static int GetFunctionalAreaIndex(
+        string? functionalArea)
+    {
+        return Normalize(functionalArea)
+            .ToUpperInvariant() switch
+        {
+            "BR" => 1,
+            "DS" => 2,
+            "EN" => 3,
+            "GT" => 4,
+            "PS" => 5,
+            "PA" => 6,
+            "RR" => 7,
+            "RW" => 8,
+            "RD" => 9,
+            "TR" => 10,
+            "UT" => 11,
+            "PC" => 12,
+            "VE" => 13,
+
+            _ => 0
+        };
+    }
+
+    // =====================================================================
+    // MESSAGE LOOKUP
+    // =====================================================================
+
+    private async Task<string> GetMessageAsync(
+        string messageId,
+        string fallbackMessage,
+        CancellationToken cancellationToken)
+    {
+        var message = await _repository.GetMessageAsync(
+            messageId,
+            cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return fallbackMessage;
+        }
+
+        return message.Trim();
+    }
+
+    // =====================================================================
+    // NORMALIZATION
+    // =====================================================================
+
+    private static void NormalizeInput(
+        D158500Input input)
+    {
+        input.Action =
+            Normalize(input.Action)
+                .ToUpperInvariant();
+
+        input.JobNumber =
+            Normalize(input.JobNumber)
+                .ToUpperInvariant();
+
+        input.OriginalJobNumber =
+            Normalize(input.OriginalJobNumber)
+                .ToUpperInvariant();
+
+        input.SummaryFunction =
+            Normalize(input.SummaryFunction)
+                .ToUpperInvariant();
+
+        input.RemarkSelection =
+            Normalize(input.RemarkSelection)
+                .ToUpperInvariant();
+
+        input.Rows ??= new List<D158500RowInput>();
+
+        foreach (var row in input.Rows)
+        {
+            row.FunctionalArea =
+                Normalize(row.FunctionalArea)
+                    .ToUpperInvariant();
+
+            row.Selection =
+                Normalize(row.Selection)
+                    .ToUpperInvariant();
+        }
+    }
+
+    private static string Normalize(
+        string? value)
+    {
+        return value?.Trim() ?? "";
+    }
+
+    // =====================================================================
+    // PC END DATE FORMAT
+    //
+    // Legacy COBOL displays PC-END as MM/YEAR.
+    //
+    // This parser intentionally accepts several likely repository
+    // representations. Ideally Infrastructure should eventually return
+    // typed DateTime/DateOnly values instead of strings.
+    // =====================================================================
+
+    private static string FormatMonthYear(
+        string? value)
+    {
+        var text = Normalize(value);
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "";
+        }
+
+        var formats = new[]
+        {
+            "MM/dd/yyyy",
+            "M/d/yyyy",
+            "yyyy-MM-dd",
+            "yyyyMMdd",
+            "MM/yyyy",
+            "M/yyyy"
+        };
+
+        if (DateTime.TryParseExact(
+                text,
+                formats,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed))
+        {
+            return parsed.ToString(
+                "MM/yyyy",
+                CultureInfo.InvariantCulture);
+        }
+
+        if (DateTime.TryParse(
+                text,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out parsed))
+        {
+            return parsed.ToString(
+                "MM/yyyy",
+                CultureInfo.InvariantCulture);
+        }
+
+        // Preserve old data if it cannot be parsed.
+        return text;
+    }
+}
