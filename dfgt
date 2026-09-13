@@ -1,1026 +1,201 @@
-namespace PCPM.Application.D158500;
-
-public sealed class D158500Service : ID158500Service
+public async Task<IReadOnlyList<FunctionalAreaRecord>>
+    GetFunctionalAreasAsync(
+        CancellationToken cancellationToken = default)
 {
-    private readonly ID158500Repository _repository;
+    const string sql = """
+        SELECT
+            FUNC_AREA,
+            FUNC_AREA_DESC,
+            SEQ
+        FROM dbo.YOUR_FUNCTIONAL_AREA_TABLE_OR_VIEW
+        ORDER BY SEQ ASC;
+        """;
 
-    public D158500Service(ID158500Repository repository)
+    await using var connection = CreateConnection();
+    await connection.OpenAsync(cancellationToken);
+
+    await using var command = connection.CreateCommand();
+    command.CommandText = sql;
+
+    await using var reader =
+        await command.ExecuteReaderAsync(cancellationToken);
+
+    var records = new List<FunctionalAreaRecord>();
+
+    while (await reader.ReadAsync(cancellationToken))
     {
-        _repository = repository;
+        records.Add(new FunctionalAreaRecord
+        {
+            FunctionalArea =
+                Convert.ToString(reader["FUNC_AREA"])?.Trim()
+                ?? string.Empty,
+
+            Description =
+                Convert.ToString(reader["FUNC_AREA_DESC"])?.Trim()
+                ?? string.Empty,
+
+            Sequence =
+                reader["SEQ"] == DBNull.Value
+                    ? 0
+                    : Convert.ToInt32(reader["SEQ"])
+        });
     }
 
-    public async Task<D158500Screen> LoadAsync(
-        string? jobNumber,
-        CancellationToken cancellationToken = default)
-    {
-        jobNumber = Normalize(jobNumber);
-
-        // Equivalent to the legacy reset/initial screen:
-        // load the functional-area rows even when there is no job yet.
-        if (string.IsNullOrWhiteSpace(jobNumber))
-        {
-            return await BuildResetScreenAsync(cancellationToken);
-        }
-
-        var job = await _repository.FindJobAsync(
-            jobNumber,
-            cancellationToken);
-
-        if (job is null)
-        {
-            var empty = await BuildResetScreenAsync(cancellationToken);
-
-            empty.JobNumber = jobNumber;
-            empty.ErrorMessage = await GetMessageAsync(
-                "E00003",
-                "NO RECORDS FOUND AT ALL",
-                cancellationToken);
-
-            return empty;
-        }
-
-        var screen = await BuildJobScreenAsync(
-            job,
-            cancellationToken);
-
-        // Legacy LOAD-JOBREC retrieves the first job >= the requested job.
-        // If it had to move to another job, display the warning.
-        if (!string.Equals(
-                job.JobNumber.Trim(),
-                jobNumber,
-                StringComparison.OrdinalIgnoreCase))
-        {
-            screen.ErrorMessage = await GetMessageAsync(
-                "W00003",
-                "NEXT JOB RECORD RETURNED",
-                cancellationToken);
-        }
-
-        return screen;
-    }
-
-    public async Task<D158500Screen> ResetAsync(
-        CancellationToken cancellationToken = default)
-    {
-        return await BuildResetScreenAsync(cancellationToken);
-    }
-
-    public async Task<D158500Screen> ScrollForwardAsync(
-        string jobNumber,
-        CancellationToken cancellationToken = default)
-    {
-        jobNumber = Normalize(jobNumber);
-
-        if (string.IsNullOrWhiteSpace(jobNumber))
-            return await ResetAsync(cancellationToken);
-
-        var job = await _repository.FindNextJobAsync(
-            jobNumber,
-            cancellationToken);
-
-        if (job is null)
-        {
-            var current = await LoadAsync(
-                jobNumber,
-                cancellationToken);
-
-            current.ErrorMessage = await GetMessageAsync(
-                "U00007",
-                "END OF FILE",
-                cancellationToken);
-
-            return current;
-        }
-
-        return await BuildJobScreenAsync(
-            job,
-            cancellationToken);
-    }
-
-    public async Task<D158500Screen> ScrollBackwardAsync(
-        string jobNumber,
-        CancellationToken cancellationToken = default)
-    {
-        jobNumber = Normalize(jobNumber);
-
-        if (string.IsNullOrWhiteSpace(jobNumber))
-            return await ResetAsync(cancellationToken);
-
-        var job = await _repository.FindPreviousJobAsync(
-            jobNumber,
-            cancellationToken);
-
-        if (job is null)
-        {
-            var current = await LoadAsync(
-                jobNumber,
-                cancellationToken);
-
-            current.ErrorMessage = await GetMessageAsync(
-                "U00006",
-                "BEGINNING OF FILE",
-                cancellationToken);
-
-            return current;
-        }
-
-        return await BuildJobScreenAsync(
-            job,
-            cancellationToken);
-    }
-
-    public async Task<D158500Result> ProcessEnterAsync(
-        D158500Input input,
-        CancellationToken cancellationToken = default)
-    {
-        input ??= new D158500Input();
-
-        input.Action = Normalize(input.Action).ToUpperInvariant();
-        input.JobNumber = Normalize(input.JobNumber);
-        input.SummaryFunction =
-            Normalize(input.SummaryFunction).ToUpperInvariant();
-        input.RemarkSelection =
-            Normalize(input.RemarkSelection).ToUpperInvariant();
-
-        input.Rows ??= new List<D158500RowInput>();
-
-        foreach (var row in input.Rows)
-        {
-            row.FunctionalArea =
-                Normalize(row.FunctionalArea).ToUpperInvariant();
-
-            row.Selection =
-                Normalize(row.Selection).ToUpperInvariant();
-        }
-
-        //
-        // Legacy CHECK-CONFLICT:
-        // only one navigation request may be entered at a time.
-        //
-        var selectionCount = 0;
-
-        if (!string.IsNullOrWhiteSpace(input.Action))
-            selectionCount++;
-
-        if (!string.IsNullOrWhiteSpace(input.SummaryFunction))
-            selectionCount++;
-
-        if (!string.IsNullOrWhiteSpace(input.RemarkSelection))
-            selectionCount++;
-
-        selectionCount += input.Rows.Count(
-            x => !string.IsNullOrWhiteSpace(x.Selection));
-
-        if (selectionCount > 1)
-        {
-            return new D158500Result
-            {
-                Screen = await CreateErrorScreenAsync(
-                    input.JobNumber,
-                    "E00016",
-                    "NAVIGATION CONFLICT",
-                    cancellationToken)
-            };
-        }
-
-        //
-        // ACTION
-        //
-        if (!string.IsNullOrWhiteSpace(input.Action))
-        {
-            if (!IsValidAction(input.Action))
-            {
-                return new D158500Result
-                {
-                    Screen = await CreateErrorScreenAsync(
-                        input.JobNumber,
-                        "E00002",
-                        "INVALID ACTION CODE",
-                        cancellationToken)
-                };
-            }
-
-            // Numeric ACTION values correspond to panel/screen numbers.
-            if (input.Action.All(char.IsDigit))
-            {
-                return new D158500Result
-                {
-                    DestinationPage = input.Action
-                };
-            }
-
-            /*
-             * "SO" is explicitly valid in the legacy program.
-             *
-             * The supplied portion of P158500 shows that it is passed
-             * back through W-NEXT, but it does not establish a Razor
-             * destination named D158SO.
-             *
-             * Preserve it as valid without inventing a bogus route.
-             */
-            if (input.Action == "SO")
-            {
-                var screen = await LoadAsync(
-                    input.JobNumber,
-                    cancellationToken);
-
-                screen.ErrorMessage =
-                    "SO ACTION REQUIRES LEGACY CALLER ROUTING";
-
-                return new D158500Result
-                {
-                    Screen = screen
-                };
-            }
-        }
-
-        //
-        // SF - Summary Function
-        //
-        if (!string.IsNullOrWhiteSpace(input.SummaryFunction))
-        {
-            if (input.SummaryFunction == "S")
-            {
-                return new D158500Result
-                {
-                    DestinationPage = "510"
-                };
-            }
-
-            return new D158500Result
-            {
-                Screen = await CreateErrorScreenAsync(
-                    input.JobNumber,
-                    "E00012",
-                    "INVALID SELECTION CODE",
-                    cancellationToken)
-            };
-        }
-
-        //
-        // SELREM
-        //
-        if (!string.IsNullOrWhiteSpace(input.RemarkSelection))
-        {
-            if (input.RemarkSelection == "S")
-            {
-                return new D158500Result
-                {
-                    DestinationPage = "550"
-                };
-            }
-
-            return new D158500Result
-            {
-                Screen = await CreateErrorScreenAsync(
-                    input.JobNumber,
-                    "E00012",
-                    "INVALID SELECTION CODE",
-                    cancellationToken)
-            };
-        }
-
-        //
-        // Functional-area row selection.
-        //
-        var selectedRow = input.Rows.FirstOrDefault(
-            x => !string.IsNullOrWhiteSpace(x.Selection));
-
-        if (selectedRow is not null)
-        {
-            var route = RouteFunctionalArea(selectedRow);
-
-            if (route.Navigate)
-                return route;
-
-            return new D158500Result
-            {
-                Screen = await CreateErrorScreenAsync(
-                    input.JobNumber,
-                    "E00012",
-                    "INVALID SELECTION CODE",
-                    cancellationToken)
-            };
-        }
-
-        //
-        // At this point the page model should already have handled
-        // entry of a NEW job number. Therefore no navigation selection
-        // means the legacy "SELECTION NOT SPECIFIED" condition.
-        //
-        return new D158500Result
-        {
-            Screen = await CreateErrorScreenAsync(
-                input.JobNumber,
-                "E00004",
-                "SELECTION NOT SPECIFIED",
-                cancellationToken)
-        };
-    }
-
-    private async Task<D158500Screen> BuildResetScreenAsync(
-        CancellationToken cancellationToken)
-    {
-        var functionalAreas =
-            await _repository.GetFunctionalAreasAsync(
-                cancellationToken);
-
-        var screen = new D158500Screen
-        {
-            ScreenReset = true,
-            JobNumber = "",
-            JobName = "",
-            PcEnd = "",
-            VePercent = "N/A",
-            LatestRemark = "",
-            ErrorMessage = ""
-        };
-
-        screen.Rows = BuildDisplayRows(functionalAreas);
-
-        return screen;
-    }
-
-    private async Task<D158500Screen> BuildJobScreenAsync(
-        JobRecord job,
-        CancellationToken cancellationToken)
-    {
-        var functionalAreas =
-            await _repository.GetFunctionalAreasAsync(
-                cancellationToken);
-
-        var statusRecords =
-            await _repository.GetJobStatusesAsync(
-                job.JobNumber,
-                cancellationToken);
-
-        var latestRemark =
-            await _repository.GetLatestRemarkAsync(
-                job.JobNumber,
-                cancellationToken);
-
-        var screen = new D158500Screen
-        {
-            JobNumber = Normalize(job.JobNumber),
-            JobName = Normalize(job.JobName),
-            PcEnd = "",
-            VePercent = "N/A",
-            LatestRemark = Normalize(latestRemark?.Remark),
-            ScreenReset = false,
-            ErrorMessage = "",
-            Rows = BuildDisplayRows(functionalAreas)
-        };
-
-        if (statusRecords.Count == 0)
-        {
-            screen.ErrorMessage = await GetMessageAsync(
-                "E00021",
-                "NO STATUS RECORD FOUND",
-                cancellationToken);
-
-            return screen;
-        }
-
-        foreach (var status in statusRecords)
-        {
-            var fa = Normalize(status.FunctionalArea)
-                .ToUpperInvariant();
-
-            var faIndex = GetFunctionalAreaIndex(fa);
-
-            if (faIndex == 0)
-            {
-                screen.ErrorMessage = await GetMessageAsync(
-                    "E00020",
-                    "INVALID FA ON STATUS RECORD",
-                    cancellationToken);
-
-                continue;
-            }
-
-            //
-            // Legacy special fields:
-            //
-            // PC = functional area #12
-            // VE = functional area #13
-            //
-            if (fa == "PC")
-            {
-                screen.PcEnd = Normalize(status.EndDate);
-                continue;
-            }
-
-            if (fa == "VE")
-            {
-                screen.VePercent =
-                    string.IsNullOrWhiteSpace(status.Percent)
-                        ? "N/A"
-                        : Normalize(status.Percent);
-
-                continue;
-            }
-
-            var row = screen.Rows.FirstOrDefault(
-                x => string.Equals(
-                    x.FunctionalArea,
-                    fa,
-                    StringComparison.OrdinalIgnoreCase));
-
-            if (row is null)
-                continue;
-
-            row.StartDate = Normalize(status.StartDate);
-            row.ProjectedEndDate =
-                Normalize(status.ProjectedEndDate);
-            row.EndDate = Normalize(status.EndDate);
-            row.Status = Normalize(status.Status);
-
-            row.Percent =
-                string.IsNullOrWhiteSpace(status.Percent)
-                    ? "N/A"
-                    : Normalize(status.Percent);
-        }
-
-        return screen;
-    }
-
-    private static List<D158500Row> BuildDisplayRows(
-        IReadOnlyList<FunctionalAreaRecord> functionalAreas)
-    {
-        /*
-         * The legacy screen displays the first 11 functional areas
-         * as selectable rows.
-         *
-         * PC and VE are displayed separately as summary fields.
-         */
-        return functionalAreas
-            .Where(x =>
-                GetFunctionalAreaIndex(x.FunctionalArea)
-                    is >= 1 and <= 11)
-            .OrderBy(x => x.Sequence)
-            .Select(x => new D158500Row
-            {
-                FunctionalArea =
-                    Normalize(x.FunctionalArea).ToUpperInvariant(),
-
-                Description = Normalize(x.Description),
-
-                Percent = "N/A"
-            })
-            .ToList();
-    }
-
-    private async Task<D158500Screen> CreateErrorScreenAsync(
-        string? jobNumber,
-        string messageId,
-        string fallback,
-        CancellationToken cancellationToken)
-    {
-        var screen = await LoadAsync(
-            jobNumber,
-            cancellationToken);
-
-        screen.ErrorMessage = await GetMessageAsync(
-            messageId,
-            fallback,
-            cancellationToken);
-
-        return screen;
-    }
-
-    private async Task<string> GetMessageAsync(
-        string messageId,
-        string fallback,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var message = await _repository.GetMessageAsync(
-                messageId,
-                cancellationToken);
-
-            return string.IsNullOrWhiteSpace(message)
-                ? fallback
-                : message.Trim();
-        }
-        catch (NotImplementedException)
-        {
-            // Allows the page/business layer to be developed before
-            // the legacy message repository has been completed.
-            return fallback;
-        }
-    }
-
-    private static D158500Result RouteFunctionalArea(
-        D158500RowInput row)
-    {
-        var selection = Normalize(row.Selection)
-            .ToUpperInvariant();
-
-        var fa = Normalize(row.FunctionalArea)
-            .ToUpperInvariant();
-
-        return selection switch
-        {
-            "S" or "I" => new D158500Result
-            {
-                DestinationPage = "302",
-                FunctionalArea = fa
-            },
-
-            "U" => new D158500Result
-            {
-                DestinationPage = "202",
-                FunctionalArea = fa
-            },
-
-            _ => new D158500Result()
-        };
-    }
-
-    private static int GetFunctionalAreaIndex(string? fa)
-    {
-        return Normalize(fa).ToUpperInvariant() switch
-        {
-            "BR" => 1,
-            "DS" => 2,
-            "EN" => 3,
-            "GT" => 4,
-            "PS" => 5,
-            "PA" => 6,
-            "RR" => 7,
-            "RW" => 8,
-            "RD" => 9,
-            "TR" => 10,
-            "UT" => 11,
-            "PC" => 12,
-            "VE" => 13,
-            _ => 0
-        };
-    }
-
-    private static bool IsValidAction(string? action)
-    {
-        action = Normalize(action).ToUpperInvariant();
-
-        if (string.IsNullOrWhiteSpace(action))
-            return true;
-
-        return action == "SO" ||
-               action.All(char.IsDigit);
-    }
-
-    private static string Normalize(string? value)
-    {
-        return value?.Trim() ?? "";
-    }
+    return records;
 }
 
 
 
 
 
-
-
-//////////using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-using PCPM.Application.D158500;
-
-namespace PCPM.Pages;
-
-public sealed class D158500Model : PageModel
+public async Task<IReadOnlyList<JobStatusRecord>>
+    GetJobStatusesAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default)
 {
-    private readonly ID158500Service _service;
+    const string sql = """
+        SELECT
+            JOBNO,
+            FUNC_AREA,
+            FA_START_DATE,
+            FA_PROJ_END,
+            FA_END,
+            FA_PERCENT,
+            FA_STATUS
+        FROM dbo.YOUR_JOB_STATUS_TABLE_OR_VIEW
+        WHERE JOBNO = @JobNumber
+          AND STATUS = '01'
+          AND LTRIM(RTRIM(ISNULL(DELFLAG, ''))) = ''
+        ORDER BY FUNC_AREA;
+        """;
 
-    public D158500Model(ID158500Service service)
+    await using var connection = CreateConnection();
+    await connection.OpenAsync(cancellationToken);
+
+    await using var command = connection.CreateCommand();
+    command.CommandText = sql;
+
+    command.Parameters.Add(
+        "@JobNumber",
+        SqlDbType.VarChar,
+        10).Value = jobNumber.Trim();
+
+    await using var reader =
+        await command.ExecuteReaderAsync(cancellationToken);
+
+    var records = new List<JobStatusRecord>();
+
+    while (await reader.ReadAsync(cancellationToken))
     {
-        _service = service;
-    }
-
-    // ------------------------------------------------------------
-    // Editable fields from the Razor screen
-    // ------------------------------------------------------------
-
-    [BindProperty]
-    public string Action { get; set; } = "";
-
-    [BindProperty]
-    public string JobNumber { get; set; } = "";
-
-    /*
-     * Important:
-     * This allows us to determine whether ENTER was pressed after
-     * typing a different job number.
-     *
-     * We do NOT need to alter D158500Input for this.
-     */
-    [BindProperty]
-    public string OriginalJobNumber { get; set; } = "";
-
-    [BindProperty]
-    public string SF { get; set; } = "";
-
-    [BindProperty]
-    public string SelRem { get; set; } = "";
-
-    [BindProperty]
-    public List<string> Selections { get; set; } =
-        Enumerable.Repeat("", 11).ToList();
-
-    // ------------------------------------------------------------
-    // Display model
-    // ------------------------------------------------------------
-
-    public D158500Screen Screen { get; private set; } =
-        new();
-
-    public string DisplayDate =>
-        DateTime.Now.ToString("MM/dd/yyyy");
-
-    public string JobName =>
-        Screen.JobName;
-
-    public string PseEnd =>
-        Screen.PcEnd;
-
-    public string ValueEngineeringPercent =>
-        Screen.VePercent;
-
-    public string LatestRemark =>
-        Screen.LatestRemark;
-
-    public string ErrorMessage =>
-        Screen.ErrorMessage;
-
-    public IReadOnlyList<D158500Row> Rows =>
-        Screen.Rows;
-
-    /*
-     * Your current D158500Screen does NOT expose BidAmount.
-     *
-     * This property exists so existing Razor markup that references
-     * Model.TotalFunding will compile.
-     *
-     * If you want the legacy Bid Amount displayed, see my note below.
-     */
-    public string TotalFunding => "";
-
-    // ------------------------------------------------------------
-    // Initial load
-    // ------------------------------------------------------------
-
-    public async Task OnGetAsync(
-        string? jobNumber,
-        CancellationToken cancellationToken)
-    {
-        Screen = await _service.LoadAsync(
-            jobNumber,
-            cancellationToken);
-
-        ApplyScreenToPage();
-    }
-
-    // ------------------------------------------------------------
-    // ENTER
-    // ------------------------------------------------------------
-
-    public async Task<IActionResult> OnPostAsync(
-        CancellationToken cancellationToken)
-    {
-        return await ProcessEnterAsync(cancellationToken);
-    }
-
-    public async Task<IActionResult> OnPostEnterAsync(
-        CancellationToken cancellationToken)
-    {
-        return await ProcessEnterAsync(cancellationToken);
-    }
-
-    private async Task<IActionResult> ProcessEnterAsync(
-        CancellationToken cancellationToken)
-    {
-        NormalizePostedValues();
-
-        /*
-         * Legacy NEW-JOB check:
-         *
-         * If the user typed another job number and pressed ENTER,
-         * load that job rather than producing
-         * "SELECTION NOT SPECIFIED".
-         */
-        if (!string.IsNullOrWhiteSpace(JobNumber) &&
-            !string.Equals(
-                JobNumber,
-                OriginalJobNumber,
-                StringComparison.OrdinalIgnoreCase))
+        records.Add(new JobStatusRecord
         {
-            Screen = await _service.LoadAsync(
-                JobNumber,
-                cancellationToken);
+            JobNumber =
+                Convert.ToString(reader["JOBNO"])?.Trim()
+                ?? string.Empty,
 
-            ApplyScreenToPage();
+            FunctionalArea =
+                Convert.ToString(reader["FUNC_AREA"])?.Trim()
+                ?? string.Empty,
 
-            return Page();
-        }
+            StartDate =
+                Convert.ToString(reader["FA_START_DATE"])?.Trim()
+                ?? string.Empty,
 
-        /*
-         * Reload trusted display data.
-         *
-         * We do not trust functional-area codes sent from the browser.
-         * Only the selection boxes are taken from the POST.
-         */
-        var trustedScreen = await _service.LoadAsync(
-            JobNumber,
-            cancellationToken);
+            ProjectedEndDate =
+                Convert.ToString(reader["FA_PROJ_END"])?.Trim()
+                ?? string.Empty,
 
-        var input = BuildInput(trustedScreen);
+            EndDate =
+                Convert.ToString(reader["FA_END"])?.Trim()
+                ?? string.Empty,
 
-        var result = await _service.ProcessEnterAsync(
-            input,
-            cancellationToken);
+            Percent =
+                Convert.ToString(reader["FA_PERCENT"])?.Trim()
+                ?? string.Empty,
 
-        if (result.Navigate)
-        {
-            return Navigate(result);
-        }
-
-        Screen =
-            result.Screen ??
-            trustedScreen;
-
-        /*
-         * Do not call ApplyScreenToPage here because that would
-         * clear the user's posted selection values after an error.
-         */
-        OriginalJobNumber = Screen.JobNumber;
-
-        EnsureSelections();
-
-        return Page();
+            Status =
+                Convert.ToString(reader["FA_STATUS"])?.Trim()
+                ?? string.Empty
+        });
     }
 
-    // ------------------------------------------------------------
-    // F6 RESET
-    // ------------------------------------------------------------
-
-    public async Task<IActionResult> OnPostResetAsync(
-        CancellationToken cancellationToken)
-    {
-        Screen = await _service.ResetAsync(
-            cancellationToken);
-
-        Action = "";
-        JobNumber = "";
-        OriginalJobNumber = "";
-        SF = "";
-        SelRem = "";
-
-        Selections =
-            Enumerable.Repeat("", 11).ToList();
-
-        return Page();
-    }
-
-    // ------------------------------------------------------------
-    // F7 BACKWARD
-    // ------------------------------------------------------------
-
-    public async Task<IActionResult> OnPostBackwardAsync(
-        CancellationToken cancellationToken)
-    {
-        NormalizePostedValues();
-
-        var currentJob =
-            !string.IsNullOrWhiteSpace(OriginalJobNumber)
-                ? OriginalJobNumber
-                : JobNumber;
-
-        Screen = await _service.ScrollBackwardAsync(
-            currentJob,
-            cancellationToken);
-
-        ApplyScreenToPage();
-
-        return Page();
-    }
-
-    // ------------------------------------------------------------
-    // F8 FORWARD
-    // ------------------------------------------------------------
-
-    public async Task<IActionResult> OnPostForwardAsync(
-        CancellationToken cancellationToken)
-    {
-        NormalizePostedValues();
-
-        var currentJob =
-            !string.IsNullOrWhiteSpace(OriginalJobNumber)
-                ? OriginalJobNumber
-                : JobNumber;
-
-        Screen = await _service.ScrollForwardAsync(
-            currentJob,
-            cancellationToken);
-
-        ApplyScreenToPage();
-
-        return Page();
-    }
-
-    // ------------------------------------------------------------
-    // F1 HELP
-    // ------------------------------------------------------------
-
-    public IActionResult OnPostHelp()
-    {
-        /*
-         * D158999 is your generic legacy help panel.
-         *
-         * Adjust the query parameter name only if your D158999
-         * PageModel expects something different.
-         */
-        return RedirectToPage(
-            "/D158999",
-            new
-            {
-                screen = "500"
-            });
-    }
-
-    // ------------------------------------------------------------
-    // F3 PREVIOUS
-    // ------------------------------------------------------------
-
-    public IActionResult OnPostPrevious()
-    {
-        /*
-         * Legacy code uses W-PREV / P-RECORD, which is effectively
-         * a navigation stack.
-         *
-         * Until that navigation-stack state is wired into the new
-         * session service, D158000 is the safe PCPM fallback.
-         */
-        return RedirectToPage("/D158000");
-    }
-
-    // ------------------------------------------------------------
-    // F12 MAIN MENU
-    // ------------------------------------------------------------
-
-    public IActionResult OnPostMain()
-    {
-        return RedirectToPage("/D158000");
-    }
-
-    // ------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------
-
-    private D158500Input BuildInput(
-        D158500Screen trustedScreen)
-    {
-        EnsureSelections();
-
-        var input = new D158500Input
-        {
-            Action = Action,
-            JobNumber = JobNumber,
-            SummaryFunction = SF,
-            RemarkSelection = SelRem,
-            Rows = new List<D158500RowInput>()
-        };
-
-        for (var i = 0; i < trustedScreen.Rows.Count; i++)
-        {
-            var selection =
-                i < Selections.Count
-                    ? Selections[i]
-                    : "";
-
-            input.Rows.Add(
-                new D158500RowInput
-                {
-                    FunctionalArea =
-                        trustedScreen.Rows[i].FunctionalArea,
-
-                    Selection = selection
-                });
-        }
-
-        return input;
-    }
-
-    private IActionResult Navigate(
-        D158500Result result)
-    {
-        var destination =
-            result.DestinationPage?.Trim() ?? "";
-
-        /*
-         * Do not create a page named D158SO.
-         */
-        if (!destination.All(char.IsDigit))
-        {
-            Screen = new D158500Screen
-            {
-                JobNumber = JobNumber,
-                ErrorMessage =
-                    $"UNSUPPORTED NAVIGATION ACTION: {destination}"
-            };
-
-            return Page();
-        }
-
-        var pageName =
-            $"/D158{destination}";
-
-        /*
-         * We are passing the context explicitly for now.
-         *
-         * If D158202 / D158302 / D158510 / D158550 use your
-         * PcpmSessionService instead, replace these query values with
-         * calls to that service.
-         */
-        return RedirectToPage(
-            pageName,
-            new
-            {
-                jobNumber = JobNumber,
-                fa = result.FunctionalArea
-            });
-    }
-
-    private void ApplyScreenToPage()
-    {
-        JobNumber = Screen.JobNumber;
-        OriginalJobNumber = Screen.JobNumber;
-
-        Action = "";
-        SF = "";
-        SelRem = "";
-
-        Selections =
-            Enumerable.Repeat(
-                "",
-                Math.Max(11, Screen.Rows.Count))
-            .Take(11)
-            .ToList();
-    }
-
-    private void NormalizePostedValues()
-    {
-        Action =
-            (Action ?? "")
-            .Trim()
-            .ToUpperInvariant();
-
-        JobNumber =
-            (JobNumber ?? "")
-            .Trim()
-            .ToUpperInvariant();
-
-        OriginalJobNumber =
-            (OriginalJobNumber ?? "")
-            .Trim()
-            .ToUpperInvariant();
-
-        SF =
-            (SF ?? "")
-            .Trim()
-            .ToUpperInvariant();
-
-        SelRem =
-            (SelRem ?? "")
-            .Trim()
-            .ToUpperInvariant();
-
-        EnsureSelections();
-
-        for (var i = 0; i < Selections.Count; i++)
-        {
-            Selections[i] =
-                (Selections[i] ?? "")
-                .Trim()
-                .ToUpperInvariant();
-        }
-    }
-
-    private void EnsureSelections()
-    {
-        Selections ??= new List<string>();
-
-        while (Selections.Count < 11)
-            Selections.Add("");
-
-        if (Selections.Count > 11)
-        {
-            Selections =
-                Selections.Take(11).ToList();
-        }
-    }
+    return records;
 }
 
 
 
 
 
+private static void ApplyStatusRecord(
+    D158500Screen screen,
+    JobStatusRecord status)
+{
+    var index = GetFunctionalAreaIndex(status.FunctionalArea);
+
+    if (index == 0)
+    {
+        // Legacy equivalent:
+        // E00020 - INVALID FA ON STATUS RECORD
+        screen.ErrorMessage = "INVALID FA ON STATUS RECORD";
+        return;
+    }
+
+    // PC is special in the legacy D158500 program.
+    if (index == 12)
+    {
+        screen.PcEnd = FormatMonthYear(status.EndDate);
+        return;
+    }
+
+    // VE is also special.
+    if (index == 13)
+    {
+        screen.VePercent =
+            string.IsNullOrWhiteSpace(status.Percent)
+                ? "N/A"
+                : status.Percent.Trim();
+
+        return;
+    }
+
+    var row = screen.Rows
+        .FirstOrDefault(x =>
+            string.Equals(
+                x.FunctionalArea,
+                status.FunctionalArea,
+                StringComparison.OrdinalIgnoreCase));
+
+    if (row == null)
+        return;
+
+    row.StartDate = FormatMonthYear(status.StartDate);
+    row.ProjectedEndDate =
+        FormatMonthYear(status.ProjectedEndDate);
+    row.EndDate = FormatMonthYear(status.EndDate);
+
+    row.Percent =
+        string.IsNullOrWhiteSpace(status.Percent)
+            ? "N/A"
+            : status.Percent.Trim();
+
+    row.Status = status.Status?.Trim() ?? "";
+}
+
+
+
+private static string FormatMonthYear(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        return "";
+
+    value = value.Trim();
+
+    if (DateTime.TryParse(value, out var date))
+    {
+        return date.ToString("MM/yyyy");
+    }
+
+    // Preserve legacy/database value when it cannot
+    // safely be interpreted as a DateTime.
+    return value;
+}
