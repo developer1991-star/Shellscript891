@@ -13,9 +13,9 @@ public class D158500Model : PageModel
         _service = service;
     }
 
-    // =========================================================
+    // ============================================================
     // INPUT FIELDS
-    // =========================================================
+    // ============================================================
 
     [BindProperty]
     public string Action { get; set; } = string.Empty;
@@ -30,315 +30,210 @@ public class D158500Model : PageModel
     public string SelRem { get; set; } = string.Empty;
 
     [BindProperty]
-    public List<StatusRow> StatusRows { get; set; } =
-        Enumerable.Range(0, 11)
-            .Select(_ => new StatusRow())
-            .ToList();
+    public List<string> Selections { get; set; } =
+        Enumerable.Repeat(string.Empty, 11).ToList();
 
 
-    // =========================================================
-    // DISPLAY FIELDS
-    // =========================================================
+    // ============================================================
+    // DISPLAY DATA
+    // ============================================================
 
-    public string Date { get; set; } = string.Empty;
-
-    public string JobName { get; set; } = string.Empty;
-
-    public string BidAmount { get; set; } = string.Empty;
-
-    public string Remarks { get; set; } = string.Empty;
-
-    public string ErrorMessage { get; set; } = string.Empty;
+    public D158500Screen Screen { get; private set; } = new();
 
 
-    // =========================================================
+    // ============================================================
     // GET
-    // =========================================================
+    // ============================================================
 
-    public async Task<IActionResult> OnGetAsync(string? jobNumber)
+    public async Task<IActionResult> OnGetAsync(
+        string? jobNumber,
+        CancellationToken cancellationToken)
     {
-        ClearMessage();
+        jobNumber = Normalize(jobNumber);
 
-        if (!string.IsNullOrWhiteSpace(jobNumber))
-        {
-            JobNumber = Normalize(jobNumber);
-        }
+        Screen = await _service.LoadAsync(
+            string.IsNullOrWhiteSpace(jobNumber)
+                ? null
+                : jobNumber,
+            cancellationToken);
 
-        /*
-         * If a job number was passed to this screen, load it.
-         *
-         * The old COBOL LOAD-JOBREC logic searched for the first
-         * eligible record whose JOBNO was >= the requested JOBNO.
-         */
-        if (!string.IsNullOrWhiteSpace(JobNumber))
-        {
-            await LoadJobAsync(JobNumber);
-        }
-        else
-        {
-            InitializeBlankScreen();
-        }
+        CopyScreenToPage();
 
         return Page();
     }
 
 
-    // =========================================================
-    // MAIN ENTER HANDLER
-    // =========================================================
+    // ============================================================
+    // ENTER
+    // ============================================================
 
-    public async Task<IActionResult> OnPostAsync()
+    public async Task<IActionResult> OnPostAsync(
+        CancellationToken cancellationToken)
     {
-        NormalizeInput();
+        NormalizeInputs();
+
+        var input = BuildInput();
+
+        var result = await _service.ProcessEnterAsync(
+            input,
+            cancellationToken);
 
         /*
-         * Legacy CHECK-CONFLICT.
+         * IMPORTANT:
          *
-         * Only ONE navigation request can be active at a time:
+         * ProcessEnterAsync owns the old COBOL navigation logic:
          *
          *   ACTION
          *   SF
          *   SELREM
-         *   one STATUS row
-         */
-        if (HasNavigationConflict())
-        {
-            ErrorMessage = "NAVIGATION CONFLICT";
-            await ReloadCurrentJobAsync();
-
-            return Page();
-        }
-
-        // -----------------------------------------------------
-        // ACTION entered
-        // -----------------------------------------------------
-
-        if (!string.IsNullOrWhiteSpace(Action))
-        {
-            return await ProcessActionAsync();
-        }
-
-        // -----------------------------------------------------
-        // SF selected
-        //
-        // Legacy:
-        //     WHEN D158500.SF = 'S'
-        //          SET W-NEXT = '510'
-        // -----------------------------------------------------
-
-        if (!string.IsNullOrWhiteSpace(Sf))
-        {
-            if (Sf != "S")
-            {
-                ErrorMessage = "INVALID SELECTION CODE";
-                await ReloadCurrentJobAsync();
-                return Page();
-            }
-
-            return RedirectToPage(
-                "/D158510",
-                BuildJobRouteValues());
-        }
-
-        // -----------------------------------------------------
-        // REMARK selected
-        //
-        // Legacy:
-        //     WHEN D158500.SELREM = 'S'
-        //          SET W-NEXT = '550'
-        // -----------------------------------------------------
-
-        if (!string.IsNullOrWhiteSpace(SelRem))
-        {
-            if (SelRem != "S")
-            {
-                ErrorMessage = "INVALID SELECTION CODE";
-                await ReloadCurrentJobAsync();
-                return Page();
-            }
-
-            return RedirectToPage(
-                "/D158550",
-                BuildJobRouteValues());
-        }
-
-        // -----------------------------------------------------
-        // STATUS / FUNCTIONAL AREA row selected
-        // -----------------------------------------------------
-
-        var selectedRow = StatusRows
-            .Select((row, index) => new
-            {
-                Row = row,
-                Index = index
-            })
-            .FirstOrDefault(x =>
-                !string.IsNullOrWhiteSpace(x.Row.Selection));
-
-        if (selectedRow != null)
-        {
-            return await ProcessStatusSelectionAsync(selectedRow.Row);
-        }
-
-        /*
-         * Legacy NAVIGATION-PREP:
+         *   STATUS selections
+         *   conflict detection
+         *   S/I -> 302
+         *   U   -> 202
+         *   invalid selection
+         *   selection not specified
          *
-         * No Action and no selected record means redisplay 500,
-         * unless a new job number has been entered.
+         * The Razor Page should not duplicate all of that logic.
          */
 
-        if (string.IsNullOrWhiteSpace(JobNumber))
-        {
-            ErrorMessage = "SELECTION NOT SPECIFIED";
+        Screen = result.Screen;
 
-            InitializeBlankScreen();
-
-            return Page();
-        }
+        CopyScreenToPage();
 
         /*
-         * Pressing Enter with a job number loads/reloads that job.
+         * Navigate only when the service says that another
+         * PCPM screen should be displayed.
          */
-        await LoadJobAsync(JobNumber);
+        if (!string.IsNullOrWhiteSpace(result.NextScreen))
+        {
+            return RedirectToPcpmScreen(result);
+        }
 
         return Page();
     }
 
 
-    // =========================================================
-    // PF1 - HELP
-    // =========================================================
+    // ============================================================
+    // F1
+    // ============================================================
 
     public IActionResult OnPostHelp()
     {
-        NormalizeInput();
-
         return RedirectToPage(
             "/D158999",
             new
             {
                 screen = "500",
-                jobNumber = JobNumber
+                jobNumber = Normalize(JobNumber)
             });
     }
 
 
-    // =========================================================
-    // PF3 - PREVIOUS
-    // =========================================================
+    // ============================================================
+    // F3
+    // ============================================================
 
     public IActionResult OnPostPrevious()
     {
         /*
-         * Legacy P-RECORD handling returned control to the
-         * previous screen.
+         * Eventually this should use the PCPM previous-screen
+         * value from your existing session service.
          *
-         * D158000 is used here as the safe PCPM landing point.
-         * If your existing session service stores P-RECORD,
-         * replace this redirect with that value.
+         * Do not invent a new session key here.
+         *
+         * For now D158000 is the safe fallback.
          */
         return RedirectToPage("/D158000");
     }
 
 
-    // =========================================================
-    // PF6 - RESET
-    // =========================================================
+    // ============================================================
+    // F6 RESET
+    // ============================================================
 
-    public async Task<IActionResult> OnPostResetAsync()
+    public async Task<IActionResult> OnPostResetAsync(
+        CancellationToken cancellationToken)
     {
+        Screen = await _service.ResetAsync(
+            cancellationToken);
+
+        CopyScreenToPage();
+
+        ClearSelections();
+
         Action = string.Empty;
-        Sf = string.Empty;
-        SelRem = string.Empty;
-        ErrorMessage = string.Empty;
-
-        foreach (var row in StatusRows)
-        {
-            row.Selection = string.Empty;
-        }
-
-        if (!string.IsNullOrWhiteSpace(JobNumber))
-        {
-            await LoadJobAsync(JobNumber);
-        }
-        else
-        {
-            InitializeBlankScreen();
-        }
 
         return Page();
     }
 
 
-    // =========================================================
-    // PF7 - BACKWARD
-    // =========================================================
+    // ============================================================
+    // F7 BACKWARD
+    // ============================================================
 
-    public async Task<IActionResult> OnPostBackwardAsync()
+    public async Task<IActionResult> OnPostBackwardAsync(
+        CancellationToken cancellationToken)
     {
-        NormalizeInput();
-        ClearSelections();
+        JobNumber = Normalize(JobNumber);
 
         if (string.IsNullOrWhiteSpace(JobNumber))
         {
-            ErrorMessage = "SELECTION NOT SPECIFIED";
-            InitializeBlankScreen();
+            Screen = await _service.LoadAsync(
+                null,
+                cancellationToken);
+
+            CopyScreenToPage();
 
             return Page();
         }
 
-        var result = await _service.GetPreviousJobAsync(JobNumber);
+        Screen = await _service.ScrollBackwardAsync(
+            JobNumber,
+            cancellationToken);
 
-        if (result == null)
-        {
-            ErrorMessage = "BEGINNING OF FILE";
-            await ReloadCurrentJobAsync();
+        CopyScreenToPage();
 
-            return Page();
-        }
-
-        ApplyScreen(result);
+        ClearSelections();
 
         return Page();
     }
 
 
-    // =========================================================
-    // PF8 - FORWARD
-    // =========================================================
+    // ============================================================
+    // F8 FORWARD
+    // ============================================================
 
-    public async Task<IActionResult> OnPostForwardAsync()
+    public async Task<IActionResult> OnPostForwardAsync(
+        CancellationToken cancellationToken)
     {
-        NormalizeInput();
-        ClearSelections();
+        JobNumber = Normalize(JobNumber);
 
         if (string.IsNullOrWhiteSpace(JobNumber))
         {
-            ErrorMessage = "SELECTION NOT SPECIFIED";
-            InitializeBlankScreen();
+            Screen = await _service.LoadAsync(
+                null,
+                cancellationToken);
+
+            CopyScreenToPage();
 
             return Page();
         }
 
-        var result = await _service.GetNextJobAsync(JobNumber);
+        Screen = await _service.ScrollForwardAsync(
+            JobNumber,
+            cancellationToken);
 
-        if (result == null)
-        {
-            ErrorMessage = "END OF FILE";
-            await ReloadCurrentJobAsync();
+        CopyScreenToPage();
 
-            return Page();
-        }
-
-        ApplyScreen(result);
+        ClearSelections();
 
         return Page();
     }
 
 
-    // =========================================================
-    // PF12 - MAIN MENU
-    // =========================================================
+    // ============================================================
+    // F12 MAIN
+    // ============================================================
 
     public IActionResult OnPostMain()
     {
@@ -346,391 +241,104 @@ public class D158500Model : PageModel
     }
 
 
-    // =========================================================
-    // ACTION PROCESSING
-    // =========================================================
+    // ============================================================
+    // BUILD SERVICE INPUT
+    // ============================================================
 
-    private async Task<IActionResult> ProcessActionAsync()
+    private D158500Input BuildInput()
     {
-        Action = Normalize(Action);
+        EnsureSelectionCount();
 
-        /*
-         * Legacy VALIDATE-ACTION:
-         *
-         * Valid when:
-         *   ACTION = SO
-         *
-         * OR:
-         *   ACTION is a valid numeric screen number.
-         */
-
-        if (Action == "SO")
+        return new D158500Input
         {
-            /*
-             * Keep this on D158500 unless/until the exact SO
-             * destination is confirmed by the surrounding
-             * navigation program.
-             */
-            await ReloadCurrentJobAsync();
+            Action = Normalize(Action),
+            JobNumber = Normalize(JobNumber),
+            Sf = Normalize(Sf),
+            SelRem = Normalize(SelRem),
 
-            return Page();
-        }
-
-        if (!int.TryParse(Action, out var screen))
-        {
-            ErrorMessage = "INVALID ACTION CODE";
-            await ReloadCurrentJobAsync();
-
-            return Page();
-        }
-
-        /*
-         * Screen navigation is constrained deliberately instead
-         * of allowing arbitrary URL input.
-         *
-         * Add/remove entries as the remaining PCPM panels are
-         * migrated.
-         */
-        var allowedScreens = new HashSet<int>
-        {
-            500,
-            510,
-            550,
-
-            101,
-            201,
-            202,
-            301,
-            302,
-            401,
-
-            700,
-            800,
-            900,
-            915,
-            920,
-            940,
-            945,
-            950,
-            999
+            Selections = Selections
+                .Select(Normalize)
+                .ToList()
         };
-
-        if (!allowedScreens.Contains(screen))
-        {
-            ErrorMessage = "INVALID ACTION CODE";
-            await ReloadCurrentJobAsync();
-
-            return Page();
-        }
-
-        if (screen == 500)
-        {
-            await ReloadCurrentJobAsync();
-            return Page();
-        }
-
-        return RedirectToPage(
-            $"/D158{screen:000}",
-            BuildJobRouteValues());
     }
 
 
-    // =========================================================
-    // STATUS ROW PROCESSING
-    // =========================================================
+    // ============================================================
+    // SCREEN -> PAGE
+    // ============================================================
 
-    private async Task<IActionResult> ProcessStatusSelectionAsync(
-        StatusRow row)
+    private void CopyScreenToPage()
     {
-        var selection = Normalize(row.Selection);
-        var functionalArea = Normalize(row.FunctionalArea);
-
         /*
-         * Legacy LOAD-SCREEN-ID:
-         *
-         *     S or I -> FA + 302
-         *     U      -> FA + 202
+         * JobNumber is kept as the PageModel-bound property
+         * because it is posted back by the Razor form.
          */
 
-        switch (selection)
-        {
-            case "S":
-            case "I":
+        JobNumber = Screen.JobNumber?.Trim() ?? string.Empty;
 
-                if (string.IsNullOrWhiteSpace(functionalArea))
-                {
-                    ErrorMessage = "INVALID FUNC AREA ON STATUS REC";
-                    await ReloadCurrentJobAsync();
-                    return Page();
-                }
-
-                return RedirectToPage(
-                    "/D158302",
-                    new
-                    {
-                        jobNumber = JobNumber,
-                        functionalArea
-                    });
-
-
-            case "U":
-
-                if (string.IsNullOrWhiteSpace(functionalArea))
-                {
-                    ErrorMessage = "INVALID FUNC AREA ON STATUS REC";
-                    await ReloadCurrentJobAsync();
-                    return Page();
-                }
-
-                return RedirectToPage(
-                    "/D158202",
-                    new
-                    {
-                        jobNumber = JobNumber,
-                        functionalArea
-                    });
-
-
-            default:
-
-                ErrorMessage = "INVALID SELECTION CODE";
-
-                await ReloadCurrentJobAsync();
-
-                return Page();
-        }
+        EnsureSelectionCount();
     }
 
 
-    // =========================================================
-    // LOAD JOB
-    // =========================================================
+    // ============================================================
+    // NAVIGATION
+    // ============================================================
 
-    private async Task LoadJobAsync(string requestedJobNumber)
+    private IActionResult RedirectToPcpmScreen(
+        D158500Result result)
     {
-        ClearSelections();
-
-        requestedJobNumber = Normalize(requestedJobNumber);
-
-        var result =
-            await _service.GetJobAsync(requestedJobNumber);
-
-        if (result == null)
-        {
-            JobNumber = requestedJobNumber;
-            ErrorMessage = "NO RECORDS FOUND AT ALL";
-
-            ClearDisplayData();
-
-            return;
-        }
-
-        ApplyScreen(result);
+        var screen = Normalize(result.NextScreen);
 
         /*
-         * Legacy LOAD-JOBREC:
+         * The service returns COBOL-style numbers such as:
          *
-         * The query uses JOBNO >= requested JOBNO.
-         * If a greater job is returned:
+         *   202
+         *   302
+         *   510
+         *   550
          *
-         *     NEXT JOB RECORD RETURNED
+         * Convert them to Razor Page names.
          */
 
-        if (!string.Equals(
-                result.JobNumber?.Trim(),
-                requestedJobNumber.Trim(),
-                StringComparison.OrdinalIgnoreCase))
+        if (screen.Length == 3 &&
+            int.TryParse(screen, out var number))
         {
-            ErrorMessage = "NEXT JOB RECORD RETURNED";
-        }
-    }
+            var page = $"/D158{number:000}";
 
-
-    // =========================================================
-    // RELOAD CURRENT JOB
-    // =========================================================
-
-    private async Task ReloadCurrentJobAsync()
-    {
-        var message = ErrorMessage;
-
-        if (!string.IsNullOrWhiteSpace(JobNumber))
-        {
-            var result = await _service.GetJobAsync(JobNumber);
-
-            if (result != null)
-            {
-                ApplyScreen(result);
-            }
-            else
-            {
-                ClearDisplayData();
-            }
-        }
-        else
-        {
-            ClearDisplayData();
-        }
-
-        ErrorMessage = message;
-    }
-
-
-    // =========================================================
-    // MAP SERVICE MODEL -> SCREEN
-    // =========================================================
-
-    private void ApplyScreen(D158500Screen result)
-    {
-        JobNumber = result.JobNumber?.Trim() ?? string.Empty;
-        JobName = result.JobName?.TrimEnd() ?? string.Empty;
-
-        Date = string.IsNullOrWhiteSpace(result.Date)
-            ? DateTime.Today.ToString("MM/dd/yyyy")
-            : result.Date;
-
-        BidAmount = result.BidAmount?.Trim() ?? string.Empty;
-
-        Remarks = result.Remarks?.TrimEnd() ?? string.Empty;
-
-        StatusRows = new List<StatusRow>();
-
-        if (result.StatusRows != null)
-        {
-            foreach (var source in result.StatusRows.Take(11))
-            {
-                StatusRows.Add(new StatusRow
+            return RedirectToPage(
+                page,
+                new
                 {
-                    Selection = string.Empty,
-
-                    FunctionalArea =
-                        source.FunctionalArea?.Trim() ?? string.Empty,
-
-                    FunctionalAreaDescription =
-                        source.FunctionalAreaDescription?.TrimEnd()
-                        ?? string.Empty,
-
-                    Percent =
-                        source.Percent?.Trim() ?? string.Empty,
-
-                    StartDate =
-                        source.StartDate?.Trim() ?? string.Empty,
-
-                    ProjectedEndDate =
-                        source.ProjectedEndDate?.Trim() ?? string.Empty,
-
-                    EndDate =
-                        source.EndDate?.Trim() ?? string.Empty,
-
-                    Status =
-                        source.Status?.Trim() ?? string.Empty
+                    jobNumber = Screen.JobNumber,
+                    functionalArea = result.FunctionalArea
                 });
-            }
         }
-
-        EnsureElevenRows();
-    }
-
-
-    // =========================================================
-    // CONFLICT CHECK
-    // =========================================================
-
-    private bool HasNavigationConflict()
-    {
-        var count = 0;
-
-        if (!string.IsNullOrWhiteSpace(Action))
-        {
-            count++;
-        }
-
-        if (!string.IsNullOrWhiteSpace(Sf))
-        {
-            count++;
-        }
-
-        if (!string.IsNullOrWhiteSpace(SelRem))
-        {
-            count++;
-        }
-
-        count += StatusRows.Count(
-            x => !string.IsNullOrWhiteSpace(x.Selection));
 
         /*
-         * Legacy ENTER conflict:
-         * more than one requested navigation operation.
+         * Don't redirect to arbitrary text returned from a form.
          */
-        return count > 1;
+        Screen.ErrorMessage = "INVALID SCREEN NAVIGATION";
+
+        return Page();
     }
 
 
-    // =========================================================
-    // INITIALIZATION
-    // =========================================================
+    // ============================================================
+    // NORMALIZATION
+    // ============================================================
 
-    private void InitializeBlankScreen()
-    {
-        Date = DateTime.Today.ToString("MM/dd/yyyy");
-
-        JobName = string.Empty;
-        BidAmount = string.Empty;
-        Remarks = string.Empty;
-
-        StatusRows = Enumerable.Range(0, 11)
-            .Select(_ => new StatusRow())
-            .ToList();
-    }
-
-
-    private void ClearDisplayData()
-    {
-        JobName = string.Empty;
-        BidAmount = string.Empty;
-        Remarks = string.Empty;
-
-        StatusRows = Enumerable.Range(0, 11)
-            .Select(_ => new StatusRow())
-            .ToList();
-
-        Date = DateTime.Today.ToString("MM/dd/yyyy");
-    }
-
-
-    private void EnsureElevenRows()
-    {
-        while (StatusRows.Count < 11)
-        {
-            StatusRows.Add(new StatusRow());
-        }
-
-        if (StatusRows.Count > 11)
-        {
-            StatusRows = StatusRows
-                .Take(11)
-                .ToList();
-        }
-    }
-
-
-    // =========================================================
-    // INPUT NORMALIZATION
-    // =========================================================
-
-    private void NormalizeInput()
+    private void NormalizeInputs()
     {
         Action = Normalize(Action);
         JobNumber = Normalize(JobNumber);
         Sf = Normalize(Sf);
         SelRem = Normalize(SelRem);
 
-        EnsureElevenRows();
+        EnsureSelectionCount();
 
-        foreach (var row in StatusRows)
+        for (var i = 0; i < Selections.Count; i++)
         {
-            row.Selection = Normalize(row.Selection);
-            row.FunctionalArea = Normalize(row.FunctionalArea);
+            Selections[i] = Normalize(Selections[i]);
         }
     }
 
@@ -745,59 +353,32 @@ public class D158500Model : PageModel
 
     private void ClearSelections()
     {
-        Action = string.Empty;
+        EnsureSelectionCount();
+
+        for (var i = 0; i < Selections.Count; i++)
+        {
+            Selections[i] = string.Empty;
+        }
+
         Sf = string.Empty;
         SelRem = string.Empty;
+    }
 
-        EnsureElevenRows();
 
-        foreach (var row in StatusRows)
+    private void EnsureSelectionCount()
+    {
+        Selections ??= new List<string>();
+
+        while (Selections.Count < 11)
         {
-            row.Selection = string.Empty;
+            Selections.Add(string.Empty);
         }
-    }
 
-
-    private void ClearMessage()
-    {
-        ErrorMessage = string.Empty;
-    }
-
-
-    // =========================================================
-    // ROUTE VALUES
-    // =========================================================
-
-    private object BuildJobRouteValues()
-    {
-        return new
+        if (Selections.Count > 11)
         {
-            jobNumber = JobNumber
-        };
-    }
-
-
-    // =========================================================
-    // STATUS ROW MODEL USED BY RAZOR
-    // =========================================================
-
-    public class StatusRow
-    {
-        public string Selection { get; set; } = string.Empty;
-
-        public string FunctionalArea { get; set; } = string.Empty;
-
-        public string FunctionalAreaDescription { get; set; }
-            = string.Empty;
-
-        public string Percent { get; set; } = string.Empty;
-
-        public string StartDate { get; set; } = string.Empty;
-
-        public string ProjectedEndDate { get; set; } = string.Empty;
-
-        public string EndDate { get; set; } = string.Empty;
-
-        public string Status { get; set; } = string.Empty;
+            Selections = Selections
+                .Take(11)
+                .ToList();
+        }
     }
 }
