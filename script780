@@ -1,39 +1,398 @@
 
-$env:GRPC_DEFAULT_SSL_ROOTS_FILE_PATH="$HOME\grpc-ca-bundle.pem"
-$env:SSL_CERT_FILE="$HOME\grpc-ca-bundle.pem"
-$env:REQUESTS_CA_BUNDLE="$HOME\grpc-ca-bundle.pem"
-$env:CURL_CA_BUNDLE="$HOME\grpc-ca-bundle.pem"
+namespace PCPM.Application.D158500;
+
+public interface ID158500Repository
+{
+    Task<JobRecord?> FindJobAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<JobRecord?> FindNextJobAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<JobRecord?> FindPreviousJobAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<FunctionalAreaRecord>> GetFunctionalAreasAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<JobStatusRecord>> GetJobStatusesAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<RemarkRecord?> GetLatestRemarkAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<string?> GetMessageAsync(
+        string messageId,
+        CancellationToken cancellationToken = default);
+}
 
 
 
-python -c "import google.auth; from google.auth.transport.requests import Request; c,p=google.auth.default(); c.refresh(Request()); print('ADC token refresh OK')"
+
+
+///////////////////////////////
+
+
+
+
+namespace PCPM.Application.D158500;
+
+public sealed class JobRecord
+{
+    public string JobNumber { get; set; } = "";
+    public string JobName { get; set; } = "";
+    public decimal? BidAmount { get; set; }
+}
+
+public sealed class FunctionalAreaRecord
+{
+    public string FunctionalArea { get; set; } = "";
+    public string Description { get; set; } = "";
+    public int Sequence { get; set; }
+}
+
+public sealed class JobStatusRecord
+{
+    public string JobNumber { get; set; } = "";
+    public string FunctionalArea { get; set; } = "";
+    public string StartDate { get; set; } = "";
+    public string ProjectedEndDate { get; set; } = "";
+    public string EndDate { get; set; } = "";
+    public string Percent { get; set; } = "";
+    public string Status { get; set; } = "";
+}
+
+public sealed class RemarkRecord
+{
+    public string Remark { get; set; } = "";
+    public string LastUpdated { get; set; } = "";
+    public string RemarkSequence { get; set; } = "";
+}
 
 
 
 
 
 
-$thumb = "0D23EE8F0F0560B9F68F2437C526D3CDF1FAF0C5"
-
-$cert = Get-Item "Cert:\LocalMachine\Root\$thumb"
-
-Export-Certificate `
-  -Cert $cert `
-  -FilePath "$HOME\zscaler-root.cer"
-
-certutil -encode "$HOME\zscaler-root.cer" "$HOME\zscaler-root.pem"
-
-$certifi = python -c "import certifi; print(certifi.where())"
-
-Get-Content $certifi -Raw |
-    Set-Content "$HOME\grpc-ca-bundle.pem" -Encoding ascii
-
-Add-Content "$HOME\grpc-ca-bundle.pem" "`r`n"
-Get-Content "$HOME\zscaler-root.pem" -Raw |
-    Add-Content "$HOME\grpc-ca-bundle.pem" -Encoding ascii
-
-$env:GRPC_DEFAULT_SSL_ROOTS_FILE_PATH="$HOME\grpc-ca-bundle.pem"
-$env:SSL_CERT_FILE="$HOME\grpc-ca-bundle.pem"
+/////////////////
 
 
-python -c "from google.cloud import firestore; db=firestore.Client(project='gcp-emp-ep-prod'); print(next(db.collection('Employees').limit(1).stream(), None))"
+namespace PCPM.Application.D158500;
+
+public sealed class D158500Screen
+{
+    public string JobNumber { get; set; } = "";
+    public string JobName { get; set; } = "";
+
+    public string PcEnd { get; set; } = "";
+    public string VePercent { get; set; } = "N/A";
+
+    public string LatestRemark { get; set; } = "";
+    public string ErrorMessage { get; set; } = "";
+
+    public bool ScreenReset { get; set; }
+
+    public List<D158500Row> Rows { get; set; } = new();
+}
+
+public sealed class D158500Row
+{
+    public string FunctionalArea { get; set; } = "";
+    public string Description { get; set; } = "";
+
+    public string StartDate { get; set; } = "";
+    public string ProjectedEndDate { get; set; } = "";
+    public string EndDate { get; set; } = "";
+    public string Percent { get; set; } = "N/A";
+    public string Status { get; set; } = "";
+
+    public string Selection { get; set; } = "";
+}
+
+
+
+
+
+////////////////
+
+
+
+namespace PCPM.Application.D158500;
+
+public sealed class D158500Input
+{
+    public string Action { get; set; } = "";
+    public string JobNumber { get; set; } = "";
+
+    public string SummaryFunction { get; set; } = "";
+    public string RemarkSelection { get; set; } = "";
+
+    public List<D158500RowInput> Rows { get; set; } = new();
+}
+
+public sealed class D158500RowInput
+{
+    public string FunctionalArea { get; set; } = "";
+    public string Selection { get; set; } = "";
+}
+
+
+
+
+//////////////////////
+
+
+
+namespace PCPM.Application.D158500;
+
+public interface ID158500Service
+{
+    Task<D158500Screen> LoadAsync(
+        string? jobNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<D158500Screen> ResetAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<D158500Screen> ScrollForwardAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<D158500Screen> ScrollBackwardAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<D158500Result> ProcessEnterAsync(
+        D158500Input input,
+        CancellationToken cancellationToken = default);
+}
+
+
+
+
+
+///////////////////////////
+
+
+
+namespace PCPM.Application.D158500;
+
+public sealed class D158500Result
+{
+    public D158500Screen? Screen { get; set; }
+
+    public string? DestinationPage { get; set; }
+
+    public string? FunctionalArea { get; set; }
+
+    public bool Navigate =>
+        !string.IsNullOrWhiteSpace(DestinationPage);
+}
+
+
+
+
+//////////////////////////
+
+
+private static int GetFunctionalAreaIndex(string? fa)
+{
+    return fa?.Trim().ToUpperInvariant() switch
+    {
+        "BR" => 1,
+        "DS" => 2,
+        "EN" => 3,
+        "GT" => 4,
+        "PS" => 5,
+        "PA" => 6,
+        "RR" => 7,
+        "RW" => 8,
+        "RD" => 9,
+        "TR" => 10,
+        "UT" => 11,
+        "PC" => 12,
+        "VE" => 13,
+        _ => 0
+    };
+}
+
+private static bool IsValidAction(string? action)
+{
+    if (string.IsNullOrWhiteSpace(action))
+        return true;
+
+    action = action.Trim().ToUpperInvariant();
+
+    return action == "SO" ||
+           action.All(char.IsDigit);
+}
+
+
+
+///////////////////////
+
+
+
+private static D158500Result RouteFunctionalArea(
+    D158500RowInput row)
+{
+    var selection = row.Selection
+        .Trim()
+        .ToUpperInvariant();
+
+    return selection switch
+    {
+        "S" or "I" => new D158500Result
+        {
+            DestinationPage = "302",
+            FunctionalArea = row.FunctionalArea
+        },
+
+        "U" => new D158500Result
+        {
+            DestinationPage = "202",
+            FunctionalArea = row.FunctionalArea
+        },
+
+        _ => new D158500Result()
+    };
+}
+
+
+
+
+
+
+
+
+
+///////////
+
+if (input.SummaryFunction == "S")
+{
+    return new D158500Result
+    {
+        DestinationPage = "510"
+    };
+}
+
+if (input.RemarkSelection == "S")
+{
+    return new D158500Result
+    {
+        DestinationPage = "550"
+    };
+}
+
+
+
+
+//////////////
+
+
+using PCPM.Application.D158500;
+
+namespace PCPM.Infrastructure.Repositories;
+
+public sealed class D158500Repository : ID158500Repository
+{
+    // Inject the same database connection/factory abstraction
+    // already used by your working repositories.
+
+    public Task<JobRecord?> FindJobAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default)
+    {
+        // TODO SQL:
+        //
+        // active status = '01'
+        // undeleted
+        // JOBNO >= requested
+        // ORDER BY JOBNO ASC
+        // first record
+        throw new NotImplementedException();
+    }
+
+    public Task<JobRecord?> FindNextJobAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default)
+    {
+        // TODO:
+        // JOBNO > current
+        // active + undeleted
+        // ascending
+        throw new NotImplementedException();
+    }
+
+    public Task<JobRecord?> FindPreviousJobAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default)
+    {
+        // TODO:
+        // JOBNO < current
+        // active + undeleted
+        // descending
+        throw new NotImplementedException();
+    }
+
+    public Task<IReadOnlyList<FunctionalAreaRecord>>
+        GetFunctionalAreasAsync(
+            CancellationToken cancellationToken = default)
+    {
+        // TODO:
+        // legacy V158-FAR104R0 equivalent
+        // ORDER BY SEQ
+        throw new NotImplementedException();
+    }
+
+    public Task<IReadOnlyList<JobStatusRecord>>
+        GetJobStatusesAsync(
+            string jobNumber,
+            CancellationToken cancellationToken = default)
+    {
+        // TODO:
+        // legacy V158-PST104R0 equivalent
+        // STATUS = '01'
+        // DELFLAG = blank
+        // JOBNO = requested job
+        throw new NotImplementedException();
+    }
+
+    public Task<RemarkRecord?> GetLatestRemarkAsync(
+        string jobNumber,
+        CancellationToken cancellationToken = default)
+    {
+        // TODO:
+        // legacy V158-RMK104R0 equivalent
+        // DELFLAG = blank
+        // HIST-FLAG = 'N'
+        // current/latest remark
+        throw new NotImplementedException();
+    }
+
+    public Task<string?> GetMessageAsync(
+        string messageId,
+        CancellationToken cancellationToken = default)
+    {
+        // TODO:
+        // legacy V158-MSG104R0 equivalent
+        throw new NotImplementedException();
+    }
+}
+
+
+
+//////////
+
+
+
+
+
+
+
+
