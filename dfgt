@@ -1,79 +1,28 @@
-public async Task<IReadOnlyList<FunctionalAreaRecord>>
-    GetFunctionalAreasAsync(
-        CancellationToken cancellationToken = default)
+public async Task<RemarkRecord?> GetLatestRemarkAsync(
+    string jobNumber,
+    CancellationToken cancellationToken = default)
 {
     const string sql = """
-        SELECT
-            FUNC_AREA,
-            FUNC_AREA_DESC,
-            SEQ
-        FROM dbo.YOUR_FUNCTIONAL_AREA_TABLE_OR_VIEW
-        ORDER BY SEQ ASC;
+        SELECT TOP (1)
+            [REMARK],
+            [LAST-UPDATED],
+            [REMSEQ]
+        FROM [V158-RMK104R0]
+        WHERE ISNULL([DELFLAG], '') = ''
+          AND [HIST-FLAG] = 'N'
+          AND [JOBNO] = @JobNumber
+        ORDER BY
+            [LAST-UPDATED] DESC,
+            [REMSEQ] DESC;
         """;
 
-    await using var connection = CreateConnection();
+    await using var connection =
+        new SqlConnection(_connectionString);
+
     await connection.OpenAsync(cancellationToken);
 
-    await using var command = connection.CreateCommand();
-    command.CommandText = sql;
-
-    await using var reader =
-        await command.ExecuteReaderAsync(cancellationToken);
-
-    var records = new List<FunctionalAreaRecord>();
-
-    while (await reader.ReadAsync(cancellationToken))
-    {
-        records.Add(new FunctionalAreaRecord
-        {
-            FunctionalArea =
-                Convert.ToString(reader["FUNC_AREA"])?.Trim()
-                ?? string.Empty,
-
-            Description =
-                Convert.ToString(reader["FUNC_AREA_DESC"])?.Trim()
-                ?? string.Empty,
-
-            Sequence =
-                reader["SEQ"] == DBNull.Value
-                    ? 0
-                    : Convert.ToInt32(reader["SEQ"])
-        });
-    }
-
-    return records;
-}
-
-
-
-
-
-public async Task<IReadOnlyList<JobStatusRecord>>
-    GetJobStatusesAsync(
-        string jobNumber,
-        CancellationToken cancellationToken = default)
-{
-    const string sql = """
-        SELECT
-            JOBNO,
-            FUNC_AREA,
-            FA_START_DATE,
-            FA_PROJ_END,
-            FA_END,
-            FA_PERCENT,
-            FA_STATUS
-        FROM dbo.YOUR_JOB_STATUS_TABLE_OR_VIEW
-        WHERE JOBNO = @JobNumber
-          AND STATUS = '01'
-          AND LTRIM(RTRIM(ISNULL(DELFLAG, ''))) = ''
-        ORDER BY FUNC_AREA;
-        """;
-
-    await using var connection = CreateConnection();
-    await connection.OpenAsync(cancellationToken);
-
-    await using var command = connection.CreateCommand();
-    command.CommandText = sql;
+    await using var command =
+        new SqlCommand(sql, connection);
 
     command.Parameters.Add(
         "@JobNumber",
@@ -83,119 +32,108 @@ public async Task<IReadOnlyList<JobStatusRecord>>
     await using var reader =
         await command.ExecuteReaderAsync(cancellationToken);
 
-    var records = new List<JobStatusRecord>();
-
-    while (await reader.ReadAsync(cancellationToken))
+    if (!await reader.ReadAsync(cancellationToken))
     {
-        records.Add(new JobStatusRecord
-        {
-            JobNumber =
-                Convert.ToString(reader["JOBNO"])?.Trim()
-                ?? string.Empty,
-
-            FunctionalArea =
-                Convert.ToString(reader["FUNC_AREA"])?.Trim()
-                ?? string.Empty,
-
-            StartDate =
-                Convert.ToString(reader["FA_START_DATE"])?.Trim()
-                ?? string.Empty,
-
-            ProjectedEndDate =
-                Convert.ToString(reader["FA_PROJ_END"])?.Trim()
-                ?? string.Empty,
-
-            EndDate =
-                Convert.ToString(reader["FA_END"])?.Trim()
-                ?? string.Empty,
-
-            Percent =
-                Convert.ToString(reader["FA_PERCENT"])?.Trim()
-                ?? string.Empty,
-
-            Status =
-                Convert.ToString(reader["FA_STATUS"])?.Trim()
-                ?? string.Empty
-        });
+        return null;
     }
 
-    return records;
+    var remark = new RemarkRecord
+    {
+        Remark = GetString(reader, "REMARK"),
+        RemarkSequence = GetString(reader, "REMSEQ"),
+        LastUpdated = FormatLegacyDate(
+            reader["LAST-UPDATED"])
+    };
+
+    return remark;
 }
 
 
-
-
-
-private static void ApplyStatusRecord(
-    D158500Screen screen,
-    JobStatusRecord status)
+private static string GetString(
+    SqlDataReader reader,
+    string columnName)
 {
-    var index = GetFunctionalAreaIndex(status.FunctionalArea);
+    var value = reader[columnName];
 
-    if (index == 0)
+    if (value == DBNull.Value)
     {
-        // Legacy equivalent:
-        // E00020 - INVALID FA ON STATUS RECORD
-        screen.ErrorMessage = "INVALID FA ON STATUS RECORD";
-        return;
+        return string.Empty;
     }
 
-    // PC is special in the legacy D158500 program.
-    if (index == 12)
-    {
-        screen.PcEnd = FormatMonthYear(status.EndDate);
-        return;
-    }
-
-    // VE is also special.
-    if (index == 13)
-    {
-        screen.VePercent =
-            string.IsNullOrWhiteSpace(status.Percent)
-                ? "N/A"
-                : status.Percent.Trim();
-
-        return;
-    }
-
-    var row = screen.Rows
-        .FirstOrDefault(x =>
-            string.Equals(
-                x.FunctionalArea,
-                status.FunctionalArea,
-                StringComparison.OrdinalIgnoreCase));
-
-    if (row == null)
-        return;
-
-    row.StartDate = FormatMonthYear(status.StartDate);
-    row.ProjectedEndDate =
-        FormatMonthYear(status.ProjectedEndDate);
-    row.EndDate = FormatMonthYear(status.EndDate);
-
-    row.Percent =
-        string.IsNullOrWhiteSpace(status.Percent)
-            ? "N/A"
-            : status.Percent.Trim();
-
-    row.Status = status.Status?.Trim() ?? "";
+    return Convert.ToString(value)?.Trim() ?? string.Empty;
 }
 
-
-
-private static string FormatMonthYear(string? value)
+private static string FormatLegacyDate(object value)
 {
-    if (string.IsNullOrWhiteSpace(value))
-        return "";
-
-    value = value.Trim();
-
-    if (DateTime.TryParse(value, out var date))
+    if (value == DBNull.Value || value is null)
     {
-        return date.ToString("MM/yyyy");
+        return string.Empty;
     }
 
-    // Preserve legacy/database value when it cannot
-    // safely be interpreted as a DateTime.
-    return value;
+    if (value is DateTime dateTime)
+    {
+        return dateTime.ToString("MM/dd/yyyy");
+    }
+
+    if (value is DateOnly dateOnly)
+    {
+        return dateOnly.ToString("MM/dd/yyyy");
+    }
+
+    var text = Convert.ToString(value)?.Trim();
+
+    if (string.IsNullOrWhiteSpace(text))
+    {
+        return string.Empty;
+    }
+
+    if (DateTime.TryParse(text, out var parsedDate))
+    {
+        return parsedDate.ToString("MM/dd/yyyy");
+    }
+
+    // Preserve the original value if this DB column
+    // uses a legacy/non-standard date representation.
+    return text;
 }
+
+
+
+public async Task<string?> GetMessageAsync(
+    string messageId,
+    CancellationToken cancellationToken = default)
+{
+    const string sql = """
+        SELECT TOP (1)
+            [MESSAGE-TEXT]
+        FROM [V158-MSG104R0]
+        WHERE [MESSAGE-KEY] = @MessageId
+        ORDER BY [MESSAGE-KEY];
+        """;
+
+    await using var connection =
+        new SqlConnection(_connectionString);
+
+    await connection.OpenAsync(cancellationToken);
+
+    await using var command =
+        new SqlCommand(sql, connection);
+
+    command.Parameters.Add(
+        "@MessageId",
+        SqlDbType.VarChar,
+        10).Value = messageId.Trim();
+
+    var result =
+        await command.ExecuteScalarAsync(cancellationToken);
+
+    if (result is null || result == DBNull.Value)
+    {
+        // This matches the fallback behavior seen
+        // in the legacy D158500 COBOL.
+        return "APPLICATION ERROR / CALL COMPUTER SERVICES";
+    }
+
+    return Convert.ToString(result)?.Trim();
+}
+
