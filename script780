@@ -1,11 +1,37 @@
-gcloud run revisions describe upsers-cloudrun-etl-idh-dr-00007-kvl \
-  --project="$(GcpProject)" \
-  --region="$(GcpDrRegion)" \
-  --format="yaml(status.conditions)"
+- bash: |
+    set -euo pipefail
 
+    CREATED_REVISION="$(
+      gcloud run services describe "$(CloudRunDrService)" \
+        --project="$(GcpProject)" \
+        --region="$(GcpDrRegion)" \
+        --format='value(status.latestCreatedRevisionName)'
+    )"
 
-gcloud logging read \
-'resource.type="cloud_run_revision"
- AND resource.labels.revision_name="upsers-cloudrun-etl-idh-dr-00007-kvl"' \
---project="$(GcpProject)" \
---limit=100
+    echo "Created DR revision: ${CREATED_REVISION}"
+
+    for i in {1..30}; do
+
+      READY_STATUS="$(
+        gcloud run revisions describe "${CREATED_REVISION}" \
+          --project="$(GcpProject)" \
+          --region="$(GcpDrRegion)" \
+          --format="value(status.conditions.filter('type:Ready').status)"
+      )"
+
+      echo "Revision: ${CREATED_REVISION}"
+      echo "Ready status: ${READY_STATUS}"
+
+      if [ "${READY_STATUS}" = "True" ]; then
+        echo "DR candidate revision is READY: ${CREATED_REVISION}"
+        echo "##vso[task.setvariable variable=DrCandidateRevision]${CREATED_REVISION}"
+        exit 0
+      fi
+
+      echo "Waiting for ${CREATED_REVISION} to become ready..."
+      sleep 5
+    done
+
+    echo "##vso[task.logissue type=error]Revision ${CREATED_REVISION} did not become ready"
+    exit 1
+  displayName: Verify PROD DR candidate revision
