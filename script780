@@ -1,37 +1,236 @@
-- bash: |
-    set -euo pipefail
+CI/CD Pipeline - Basic Documentation Notes
 
-    CREATED_REVISION="$(
-      gcloud run services describe "$(CloudRunDrService)" \
-        --project="$(GcpProject)" \
-        --region="$(GcpDrRegion)" \
-        --format='value(status.latestCreatedRevisionName)'
-    )"
+Azure DevOps + shared Enterprise Pipeline templates + JFrog/Lucius + Google Cloud Run
+Draft reconstructed from the supplied pipeline screenshots and operational notes
+Scope note: These are basic working notes, not a byte-for-byte transcription of the YAML. Values and names were read from screenshots and should be verified in the repository before production use. Secret values are intentionally not reproduced.
 
-    echo "Created DR revision: ${CREATED_REVISION}"
+ 
+1. Quick Overview
+• The repository contains a thin CI/CD entry-point file (azure-pipelines.yaml) and a larger CD implementation file (azure-pipelines-cd.yaml).
+• CI build logic is largely delegated to a shared Enterprise Pipeline repository owned by the EPI team. Application teams consume tagged templates rather than maintaining the full CI implementation locally.
+• CD logic is maintained in the application repository and deploys container images to Google Cloud Run for DEV, UAT, and PROD.
+• The pipeline supports two paths: build a new image, or reuse an existing image version and perform deployment only.
+• JFrog/Lucius is used as the source container registry. Google Artifact Registry (GAR) is the deployment-side registry. Podman is used to pull/tag/push images.
+• Azure DevOps Secure Files stores JSON/service-account keys and the Lucius/JFrog authentication file used by the pipeline.
+High-level execution flow
+Manual pipeline run
+ -> Select parameters (build/deploy environments/image version)
+ -> If runBuild=true: shared CI template builds artifact/image
+ -> If runBuild=false: validate the supplied existing image version
+ -> Resolve enterprise image tag
+ -> Authenticate to source registry and Google Cloud
+ -> Transfer image: Lucius/JFrog -> Google Artifact Registry
+ -> Deploy Cloud Run candidate revision
+ -> Verify candidate revision becomes Ready
+ -> Promote traffic where configured (UAT/PROD)
+2. Pipeline Entry Point - azure-pipelines.yaml
+Parameter
+Type / Default
+Meaning
+Operational note
+runBuild
+boolean / true
+Build a new image/artifact
+When false, an existing imageVersion is required for deployment.
+deployDev
+boolean / true
+Deploy to DEV
+Default deployment target.
+deployUat
+boolean / false
+Deploy to UAT
+Enable explicitly when UAT deployment is required.
+deployProd
+boolean / false
+Deploy to PROD
+Enable explicitly for production deployment.
+imageVersion
+string / 'NOT_REQUIRED'
+Existing image tag/version
+Used when runBuild=false; the CD pipeline validates it.
+ 
+• `trigger: none` and `pr: none` are configured, so this YAML is not automatically triggered by commits or pull requests in the screenshots; it is intended for manual/external orchestration.
+• The pipeline declares a repository resource named `enterprise-pipelines`, pointing to the Enterprise Platform Engineering shared repository and a tagged 9.x reference.
+• Shared variable templates are imported from the enterprise repository (Java/image/general variable templates are visible in the screenshots).
+• When `runBuild=true`, an `Artifact` stage is created and invokes the shared CI artifact template. The local CD template is then called with the selected parameters.
+resources:
+ repositories:
+   - repository: enterprise-pipelines
+     type: git
+     name: <Enterprise Platform Engineering shared repo>
+     ref: refs/tags/9.x
 
-    for i in {1..30}; do
+stages:
+ - [shared Artifact/CI template when runBuild=true]
+ - template: azure-pipelines-cd.yaml
+   parameters: <runBuild/deployDev/deployUat/deployProd/imageVersion>
+CI ownership and support
+• The CI implementation is shared/owned by the EPI team. If a failure is caused by the shared CI process or shared template behavior, post the details in the EPI group chat.
+• Include the pipeline name, run/build number, failing task name, error message, and whether the failure is reproducible.
+• A frequent CI problem is a vulnerability/policy violation while creating the image (for example, a vulnerable language package or base-image component identified by JFrog Xray).
+3. CD Template - azure-pipelines-cd.yaml
+• The CD template receives the same five parameters and conditionally creates validation/deployment stages.
+• Deployment jobs use the `EPE_AgentPool` with demands visible in the screenshots (`dynamic_agent_9` and `agent_env -equals prod`).
+• Deployment jobs use `checkout: none`; the deployment work is performed through shell commands, secure files, registry operations, and gcloud commands rather than repository checkout.
+Existing-image validation
+• When `runBuild=false` and at least one deployment environment is selected, the template creates a `Validate_Image` stage.
+• The validation job fails if `imageVersion` is still `NOT_REQUIRED`, with an error indicating that an existing image version is required when a new image is not being built.
+• If a valid version is supplied, it is carried forward as the enterprise image tag for deployment.
+Enterprise image tag resolution
+• If `imageVersion` is supplied, the pipeline uses it directly as `EnterpriseImageTag`.
+• If a new image was built, the pipeline calls the Azure DevOps Build Tags REST API using `System.AccessToken`.
+• A small Python parser reads build tags and looks for `version=<value>` and `short_commit_id=<value>`; the resulting deployable image tag is formed as `version-short_commit_id`.
+• If the expected build tags cannot be found, the pipeline logs a warning and sets a skip-deployment variable instead of attempting to deploy an unknown image.
+• If no image version is provided while `runBuild=false`, the pipeline treats it as a hard configuration error.
+4. Environment Deployment Behavior
+Environment
+GCP project
+Region
+Cloud Run service
+Registry target
+Azure DevOps environment
+DEV
+gcp-emp-ep-dev
+us-east4
+upsers-cloudrun-api-dev
+GAR in us-east4
+upsers-api-dev
+UAT
+gcp-emp-ep-uat
+us-central1
+upsers-cloudrun-api-uat
+GAR in us-docker.pkg.dev
+upsers-api-uat
+PROD
+gcp-emp-ep-prod
+us-central1 (primary); us-east4 (DR)
+upsers-cloudrun-api-prod; upsers-cloudrun-api-dr
+PROD GAR in us-docker.pkg.dev
+upsers-api-prod
+DEV
+• Depends on the Artifact stage when a new image is built; otherwise it depends on Validate_Image.
+• Uses Lucius/JFrog as the source image registry and a DEV Google Artifact Registry path as the target.
+• Downloads a DEV GCP secure key and `lucius-config.json`, authenticates to Google Cloud, and configures Docker authentication for GAR.
+• Uses Podman to log in to Lucius, pull the source image, tag it with the GAR target name, and push it to GAR.
+• Deploys a Cloud Run candidate revision with `--no-traffic` and `--tag=candidate`, then verifies that the latest-created revision matches the latest-ready revision.
+Observed behavior: The supplied DEV screenshots show candidate deployment and readiness verification. A DEV 100% traffic-promotion step was not visible in the screenshots, so do not assume it exists without checking the current YAML.
 
-      READY_STATUS="$(
-        gcloud run revisions describe "${CREATED_REVISION}" \
-          --project="$(GcpProject)" \
-          --region="$(GcpDrRegion)" \
-          --format="value(status.conditions.filter('type:Ready').status)"
-      )"
+ 
+UAT
+• Uses the UAT GCP project and `us-central1` Cloud Run region.
+• Uses separate secure keys/service identities for image transfer and Cloud Run administration/deployment.
+• Configures GAR authentication, performs basic DNS/HTTPS checks against the UAT registry endpoint, and transfers the selected image from Lucius to UAT GAR.
+• Authenticates again with the Cloud Run deployment identity before deploying the Cloud Run revision.
+• Deploys the UAT candidate with no traffic, verifies readiness, then promotes the Ready revision to 100% traffic using `gcloud run services update-traffic`.
+PROD
+• Uses the PROD GCP project with a primary Cloud Run service in `us-central1` and a disaster-recovery Cloud Run service in `us-east4`.
+• Transfers the selected image from Lucius/JFrog to the PROD Google Artifact Registry and stores the resulting image URI in a pipeline variable.
+• The screenshots show candidate deployment to both the primary and DR Cloud Run services with no traffic and the `candidate` tag.
+• The pipeline independently verifies that the primary and DR latest-created revisions become the latest-ready revisions.
+• The screenshots show traffic promotion beginning for the primary service. Confirm the final lines of the current YAML for the complete PROD/DR promotion behavior before relying on this note.
+• A block for pushing to a PROD Lucius/JFrog target is present in the screenshots but commented out, so it is documentation/history rather than active behavior in the captured version.
+5. Image Transfer and Cloud Run Deployment - Common Pattern
+1. Resolve the image tag from the manual `imageVersion` parameter or from Azure DevOps build tags.
+2. Download required Secure Files (GCP JSON key(s) and Lucius/JFrog authentication file).
+3. Authenticate to Google Cloud using `gcloud auth activate-service-account` and set the target project.
+4. Configure Docker/GAR authentication using `gcloud auth configure-docker` or an access-token-based Podman login.
+5. Log in to Lucius/JFrog with the temporary auth file, then pull the source container image.
+6. Retag the image for the target GAR repository and push it.
+7. Set an Azure DevOps pipeline variable containing the deployed image URI.
+8. Authenticate with the Cloud Run deployment/admin service account when a separate identity is required.
+9. Deploy a Cloud Run candidate revision with no production traffic.
+10. Compare latest-created and latest-ready revision names. Fail the job if the candidate did not become Ready.
+11. Promote the Ready revision to traffic when the environment flow requires it.
+6. Azure DevOps UI - Basic Operational Notes
+• Under Pipelines > Pipelines, use Recent/All/Runs to find a pipeline and inspect recent executions. Open a run to see the stages, jobs, tasks, logs, parameters, and failure point.
+• Under Pipelines > Environments, manage deployment environments such as DEV/UAT/PROD and their checks/approvals.
+• Under Pipelines > Library, manage Secure Files and variable groups. JSON keys used by the YAML should be stored here as Secure Files, not committed to the repository.
+• Other visible pipeline administration areas include Releases, Task groups, Deployment groups, and Build Tags. Build Tags are especially relevant because this CD YAML reads `version` and `short_commit_id` tags from the current build.
+How to add an approver between environments
+1. Go to Pipelines > Environments and select the target environment (for example UAT or PROD).
+2. Open the environment checks/approvals configuration and choose Add check > Approvals.
+3. Add the required user(s) or group(s), then configure instructions, timeout, and approval behavior according to team policy.
+4. Save the check. A deployment job that targets that Azure DevOps environment will wait for the approval before the protected deployment proceeds.
+Secure Files / JSON keys
+1. Go to Pipelines > Library > Secure files.
+2. Upload the approved JSON key/config file and grant only the pipelines/users that require access.
+3. Reference the file in YAML through `DownloadSecureFile@1`. Give the task a name such as `gcpKey` or `gcpCloudRunAdminKey`.
+4. Use the downloaded file through `$(<taskName>.secureFilePath)`; the pipeline should not hard-code the key contents.
+5. When rotating a key, upload/replace the Secure File and confirm pipeline authorization before the next deployment.
+Environment
+Secure-file purpose observed
+Examples visible in screenshots
+DEV
+GCP authentication + Lucius/JFrog auth
+DEV GCP CD key JSON; lucius-config.json
+UAT
+Image-transfer GCP key + Cloud Run admin key + Lucius/JFrog auth
+UAT CD key JSON; UAT Cloud Run key JSON; lucius-config.json
+PROD
+Image-transfer GCP key + PROD Cloud Run/deployment key + Lucius/JFrog auth
+PROD CD key JSON; PROD ETL/deployment JSON; lucius-config.json
+7. JFrog / Lucius and Vulnerability Troubleshooting
+• The JFrog Platform screenshot shows Artifactory areas (Packages, Builds, Artifacts, Release Lifecycle) and Xray options including Scans List, Watch Violations, Reports, and On-Demand Scanning.
+• When a CI image build fails because of a vulnerability or Xray policy violation, start by identifying the exact package/base-image component, severity/CVE, and the stage in which the policy blocked the build.
+• For application dependency vulnerabilities, the typical fix is to move to an approved non-vulnerable dependency or base image, rebuild, and rerun the scan. Do not bypass an organizational security policy unless the approved exception process explicitly allows it.
+• If the problem originates from the shared CI template, scanner configuration, or an enterprise-controlled base image, post the failure in the EPI group chat with the pipeline run and scan details.
+TBD: The team-specific step-by-step vulnerability remediation procedure was not supplied before this draft was created. Add that procedure here once available (for example: how to locate the offending package, approved upgrade/exception process, and verification steps).
 
-      echo "Revision: ${CREATED_REVISION}"
-      echo "Ready status: ${READY_STATUS}"
-
-      if [ "${READY_STATUS}" = "True" ]; then
-        echo "DR candidate revision is READY: ${CREATED_REVISION}"
-        echo "##vso[task.setvariable variable=DrCandidateRevision]${CREATED_REVISION}"
-        exit 0
-      fi
-
-      echo "Waiting for ${CREATED_REVISION} to become ready..."
-      sleep 5
-    done
-
-    echo "##vso[task.logissue type=error]Revision ${CREATED_REVISION} did not become ready"
-    exit 1
-  displayName: Verify PROD DR candidate revision
+ 
+8. Common Failure Checks
+Symptom
+First checks
+Existing image deployment fails immediately
+Check `runBuild=false` and confirm `imageVersion` is not `NOT_REQUIRED`.
+Deployment is skipped after a successful build
+Inspect build tags. The YAML expects both `version=` and `short_commit_id=` values.
+Secure file cannot be downloaded
+Check Pipelines > Library > Secure files, file name, pipeline authorization, and permissions.
+GCP authentication fails
+Check the correct environment key, service-account permissions, key rotation/expiry/revocation, and target project.
+GAR push/login fails
+Check `gcloud auth configure-docker` / access-token login, registry hostname, DNS/HTTPS reachability, and IAM permissions.
+Lucius/JFrog pull fails
+Check the `lucius-config.json` secure file, Podman login, source image path/tag, and JFrog availability/policy.
+Cloud Run revision is created but not Ready
+Open Cloud Run revision logs and pipeline output; the YAML intentionally fails when latest-created != latest-ready.
+UAT/PROD deployment is waiting
+Check Azure DevOps Environment approvals/checks and confirm the required approver has acted.
+CI build blocked by vulnerabilities
+Review JFrog Xray scan/watch violation details; fix the vulnerable dependency/base image or contact EPI for shared-CI ownership issues.
+9. Recommended Run Scenarios
+Scenario
+runBuild
+deployDev
+deployUat / deployProd
+imageVersion
+Build new image and deploy DEV
+true
+true
+false / false
+NOT_REQUIRED
+Build new image and deploy selected higher env
+true
+as needed
+true as needed
+NOT_REQUIRED
+Redeploy an existing image
+false
+as needed
+as needed
+Required existing enterprise image tag
+10. Open Items / Follow-up for Final Documentation
+• Add the exact EPI group-chat name/link if it is appropriate to publish internally.
+• Add the team-approved JFrog/Xray vulnerability remediation procedure once provided.
+• Confirm the complete PROD primary + DR traffic-promotion logic from the current end of `azure-pipelines-cd.yaml`; the final screenshot does not show all remaining lines.
+• Confirm which Azure DevOps environments currently have approvals/checks and who the approver groups are.
+• Confirm secure-file rotation ownership and the standard request process for new/rotated GCP service-account keys.
+• Consider adding a short rollback section: how to route traffic back to the previous Cloud Run revision and how to select a previously known-good image tag.
+11. One-page Handoff Summary
+• CI: local YAML calls EPI-owned shared templates. Contact EPI for shared CI/template issues.
+• CD: local template resolves an image tag, transfers the image from Lucius/JFrog to GAR, deploys Cloud Run candidate revisions, verifies readiness, and promotes traffic where configured.
+• Existing-image path: set `runBuild=false` and provide `imageVersion`. Missing version is a configuration error.
+• Secrets: keep GCP JSON keys and Lucius auth in Azure DevOps Library > Secure files; use `DownloadSecureFile@1`.
+• Approvals: configure in Azure DevOps Environments > Approvals and checks for protected UAT/PROD deployments.
+• Vulnerabilities: review JFrog Xray. Fix vulnerable dependencies/base images; escalate shared-pipeline issues to EPI.
+CI/CD Pipeline Basic Notes | Draft from screenshots | Page
