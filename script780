@@ -1,236 +1,329 @@
-CI/CD Pipeline - Basic Documentation Notes
-
-Azure DevOps + shared Enterprise Pipeline templates + JFrog/Lucius + Google Cloud Run
-Draft reconstructed from the supplied pipeline screenshots and operational notes
-Scope note: These are basic working notes, not a byte-for-byte transcription of the YAML. Values and names were read from screenshots and should be verified in the repository before production use. Secret values are intentionally not reproduced.
-
- 
-1. Quick Overview
-• The repository contains a thin CI/CD entry-point file (azure-pipelines.yaml) and a larger CD implementation file (azure-pipelines-cd.yaml).
-• CI build logic is largely delegated to a shared Enterprise Pipeline repository owned by the EPI team. Application teams consume tagged templates rather than maintaining the full CI implementation locally.
-• CD logic is maintained in the application repository and deploys container images to Google Cloud Run for DEV, UAT, and PROD.
-• The pipeline supports two paths: build a new image, or reuse an existing image version and perform deployment only.
-• JFrog/Lucius is used as the source container registry. Google Artifact Registry (GAR) is the deployment-side registry. Podman is used to pull/tag/push images.
-• Azure DevOps Secure Files stores JSON/service-account keys and the Lucius/JFrog authentication file used by the pipeline.
-High-level execution flow
-Manual pipeline run
- -> Select parameters (build/deploy environments/image version)
- -> If runBuild=true: shared CI template builds artifact/image
- -> If runBuild=false: validate the supplied existing image version
- -> Resolve enterprise image tag
- -> Authenticate to source registry and Google Cloud
- -> Transfer image: Lucius/JFrog -> Google Artifact Registry
- -> Deploy Cloud Run candidate revision
- -> Verify candidate revision becomes Ready
- -> Promote traffic where configured (UAT/PROD)
-2. Pipeline Entry Point - azure-pipelines.yaml
-Parameter
-Type / Default
-Meaning
-Operational note
-runBuild
-boolean / true
-Build a new image/artifact
-When false, an existing imageVersion is required for deployment.
-deployDev
-boolean / true
-Deploy to DEV
-Default deployment target.
-deployUat
-boolean / false
-Deploy to UAT
-Enable explicitly when UAT deployment is required.
-deployProd
-boolean / false
-Deploy to PROD
-Enable explicitly for production deployment.
-imageVersion
-string / 'NOT_REQUIRED'
-Existing image tag/version
-Used when runBuild=false; the CD pipeline validates it.
- 
-• `trigger: none` and `pr: none` are configured, so this YAML is not automatically triggered by commits or pull requests in the screenshots; it is intended for manual/external orchestration.
-• The pipeline declares a repository resource named `enterprise-pipelines`, pointing to the Enterprise Platform Engineering shared repository and a tagged 9.x reference.
-• Shared variable templates are imported from the enterprise repository (Java/image/general variable templates are visible in the screenshots).
-• When `runBuild=true`, an `Artifact` stage is created and invokes the shared CI artifact template. The local CD template is then called with the selected parameters.
-resources:
- repositories:
-   - repository: enterprise-pipelines
-     type: git
-     name: <Enterprise Platform Engineering shared repo>
-     ref: refs/tags/9.x
-
-stages:
- - [shared Artifact/CI template when runBuild=true]
- - template: azure-pipelines-cd.yaml
-   parameters: <runBuild/deployDev/deployUat/deployProd/imageVersion>
-CI ownership and support
-• The CI implementation is shared/owned by the EPI team. If a failure is caused by the shared CI process or shared template behavior, post the details in the EPI group chat.
-• Include the pipeline name, run/build number, failing task name, error message, and whether the failure is reproducible.
-• A frequent CI problem is a vulnerability/policy violation while creating the image (for example, a vulnerable language package or base-image component identified by JFrog Xray).
-3. CD Template - azure-pipelines-cd.yaml
-• The CD template receives the same five parameters and conditionally creates validation/deployment stages.
-• Deployment jobs use the `EPE_AgentPool` with demands visible in the screenshots (`dynamic_agent_9` and `agent_env -equals prod`).
-• Deployment jobs use `checkout: none`; the deployment work is performed through shell commands, secure files, registry operations, and gcloud commands rather than repository checkout.
-Existing-image validation
-• When `runBuild=false` and at least one deployment environment is selected, the template creates a `Validate_Image` stage.
-• The validation job fails if `imageVersion` is still `NOT_REQUIRED`, with an error indicating that an existing image version is required when a new image is not being built.
-• If a valid version is supplied, it is carried forward as the enterprise image tag for deployment.
-Enterprise image tag resolution
-• If `imageVersion` is supplied, the pipeline uses it directly as `EnterpriseImageTag`.
-• If a new image was built, the pipeline calls the Azure DevOps Build Tags REST API using `System.AccessToken`.
-• A small Python parser reads build tags and looks for `version=<value>` and `short_commit_id=<value>`; the resulting deployable image tag is formed as `version-short_commit_id`.
-• If the expected build tags cannot be found, the pipeline logs a warning and sets a skip-deployment variable instead of attempting to deploy an unknown image.
-• If no image version is provided while `runBuild=false`, the pipeline treats it as a hard configuration error.
-4. Environment Deployment Behavior
-Environment
-GCP project
-Region
-Cloud Run service
-Registry target
-Azure DevOps environment
-DEV
-gcp-emp-ep-dev
-us-east4
-upsers-cloudrun-api-dev
-GAR in us-east4
-upsers-api-dev
-UAT
-gcp-emp-ep-uat
-us-central1
-upsers-cloudrun-api-uat
-GAR in us-docker.pkg.dev
-upsers-api-uat
-PROD
-gcp-emp-ep-prod
-us-central1 (primary); us-east4 (DR)
-upsers-cloudrun-api-prod; upsers-cloudrun-api-dr
-PROD GAR in us-docker.pkg.dev
-upsers-api-prod
-DEV
-• Depends on the Artifact stage when a new image is built; otherwise it depends on Validate_Image.
-• Uses Lucius/JFrog as the source image registry and a DEV Google Artifact Registry path as the target.
-• Downloads a DEV GCP secure key and `lucius-config.json`, authenticates to Google Cloud, and configures Docker authentication for GAR.
-• Uses Podman to log in to Lucius, pull the source image, tag it with the GAR target name, and push it to GAR.
-• Deploys a Cloud Run candidate revision with `--no-traffic` and `--tag=candidate`, then verifies that the latest-created revision matches the latest-ready revision.
-Observed behavior: The supplied DEV screenshots show candidate deployment and readiness verification. A DEV 100% traffic-promotion step was not visible in the screenshots, so do not assume it exists without checking the current YAML.
-
- 
-UAT
-• Uses the UAT GCP project and `us-central1` Cloud Run region.
-• Uses separate secure keys/service identities for image transfer and Cloud Run administration/deployment.
-• Configures GAR authentication, performs basic DNS/HTTPS checks against the UAT registry endpoint, and transfers the selected image from Lucius to UAT GAR.
-• Authenticates again with the Cloud Run deployment identity before deploying the Cloud Run revision.
-• Deploys the UAT candidate with no traffic, verifies readiness, then promotes the Ready revision to 100% traffic using `gcloud run services update-traffic`.
-PROD
-• Uses the PROD GCP project with a primary Cloud Run service in `us-central1` and a disaster-recovery Cloud Run service in `us-east4`.
-• Transfers the selected image from Lucius/JFrog to the PROD Google Artifact Registry and stores the resulting image URI in a pipeline variable.
-• The screenshots show candidate deployment to both the primary and DR Cloud Run services with no traffic and the `candidate` tag.
-• The pipeline independently verifies that the primary and DR latest-created revisions become the latest-ready revisions.
-• The screenshots show traffic promotion beginning for the primary service. Confirm the final lines of the current YAML for the complete PROD/DR promotion behavior before relying on this note.
-• A block for pushing to a PROD Lucius/JFrog target is present in the screenshots but commented out, so it is documentation/history rather than active behavior in the captured version.
-5. Image Transfer and Cloud Run Deployment - Common Pattern
-1. Resolve the image tag from the manual `imageVersion` parameter or from Azure DevOps build tags.
-2. Download required Secure Files (GCP JSON key(s) and Lucius/JFrog authentication file).
-3. Authenticate to Google Cloud using `gcloud auth activate-service-account` and set the target project.
-4. Configure Docker/GAR authentication using `gcloud auth configure-docker` or an access-token-based Podman login.
-5. Log in to Lucius/JFrog with the temporary auth file, then pull the source container image.
-6. Retag the image for the target GAR repository and push it.
-7. Set an Azure DevOps pipeline variable containing the deployed image URI.
-8. Authenticate with the Cloud Run deployment/admin service account when a separate identity is required.
-9. Deploy a Cloud Run candidate revision with no production traffic.
-10. Compare latest-created and latest-ready revision names. Fail the job if the candidate did not become Ready.
-11. Promote the Ready revision to traffic when the environment flow requires it.
-6. Azure DevOps UI - Basic Operational Notes
-• Under Pipelines > Pipelines, use Recent/All/Runs to find a pipeline and inspect recent executions. Open a run to see the stages, jobs, tasks, logs, parameters, and failure point.
-• Under Pipelines > Environments, manage deployment environments such as DEV/UAT/PROD and their checks/approvals.
-• Under Pipelines > Library, manage Secure Files and variable groups. JSON keys used by the YAML should be stored here as Secure Files, not committed to the repository.
-• Other visible pipeline administration areas include Releases, Task groups, Deployment groups, and Build Tags. Build Tags are especially relevant because this CD YAML reads `version` and `short_commit_id` tags from the current build.
-How to add an approver between environments
-1. Go to Pipelines > Environments and select the target environment (for example UAT or PROD).
-2. Open the environment checks/approvals configuration and choose Add check > Approvals.
-3. Add the required user(s) or group(s), then configure instructions, timeout, and approval behavior according to team policy.
-4. Save the check. A deployment job that targets that Azure DevOps environment will wait for the approval before the protected deployment proceeds.
-Secure Files / JSON keys
-1. Go to Pipelines > Library > Secure files.
-2. Upload the approved JSON key/config file and grant only the pipelines/users that require access.
-3. Reference the file in YAML through `DownloadSecureFile@1`. Give the task a name such as `gcpKey` or `gcpCloudRunAdminKey`.
-4. Use the downloaded file through `$(<taskName>.secureFilePath)`; the pipeline should not hard-code the key contents.
-5. When rotating a key, upload/replace the Secure File and confirm pipeline authorization before the next deployment.
-Environment
-Secure-file purpose observed
-Examples visible in screenshots
-DEV
-GCP authentication + Lucius/JFrog auth
-DEV GCP CD key JSON; lucius-config.json
-UAT
-Image-transfer GCP key + Cloud Run admin key + Lucius/JFrog auth
-UAT CD key JSON; UAT Cloud Run key JSON; lucius-config.json
-PROD
-Image-transfer GCP key + PROD Cloud Run/deployment key + Lucius/JFrog auth
-PROD CD key JSON; PROD ETL/deployment JSON; lucius-config.json
-7. JFrog / Lucius and Vulnerability Troubleshooting
-• The JFrog Platform screenshot shows Artifactory areas (Packages, Builds, Artifacts, Release Lifecycle) and Xray options including Scans List, Watch Violations, Reports, and On-Demand Scanning.
-• When a CI image build fails because of a vulnerability or Xray policy violation, start by identifying the exact package/base-image component, severity/CVE, and the stage in which the policy blocked the build.
-• For application dependency vulnerabilities, the typical fix is to move to an approved non-vulnerable dependency or base image, rebuild, and rerun the scan. Do not bypass an organizational security policy unless the approved exception process explicitly allows it.
-• If the problem originates from the shared CI template, scanner configuration, or an enterprise-controlled base image, post the failure in the EPI group chat with the pipeline run and scan details.
-TBD: The team-specific step-by-step vulnerability remediation procedure was not supplied before this draft was created. Add that procedure here once available (for example: how to locate the offending package, approved upgrade/exception process, and verification steps).
-
- 
-8. Common Failure Checks
-Symptom
-First checks
-Existing image deployment fails immediately
-Check `runBuild=false` and confirm `imageVersion` is not `NOT_REQUIRED`.
-Deployment is skipped after a successful build
-Inspect build tags. The YAML expects both `version=` and `short_commit_id=` values.
-Secure file cannot be downloaded
-Check Pipelines > Library > Secure files, file name, pipeline authorization, and permissions.
-GCP authentication fails
-Check the correct environment key, service-account permissions, key rotation/expiry/revocation, and target project.
-GAR push/login fails
-Check `gcloud auth configure-docker` / access-token login, registry hostname, DNS/HTTPS reachability, and IAM permissions.
-Lucius/JFrog pull fails
-Check the `lucius-config.json` secure file, Podman login, source image path/tag, and JFrog availability/policy.
-Cloud Run revision is created but not Ready
-Open Cloud Run revision logs and pipeline output; the YAML intentionally fails when latest-created != latest-ready.
-UAT/PROD deployment is waiting
-Check Azure DevOps Environment approvals/checks and confirm the required approver has acted.
-CI build blocked by vulnerabilities
-Review JFrog Xray scan/watch violation details; fix the vulnerable dependency/base image or contact EPI for shared-CI ownership issues.
-9. Recommended Run Scenarios
-Scenario
-runBuild
-deployDev
-deployUat / deployProd
-imageVersion
-Build new image and deploy DEV
-true
-true
-false / false
-NOT_REQUIRED
-Build new image and deploy selected higher env
-true
-as needed
-true as needed
-NOT_REQUIRED
-Redeploy an existing image
-false
-as needed
-as needed
-Required existing enterprise image tag
-10. Open Items / Follow-up for Final Documentation
-• Add the exact EPI group-chat name/link if it is appropriate to publish internally.
-• Add the team-approved JFrog/Xray vulnerability remediation procedure once provided.
-• Confirm the complete PROD primary + DR traffic-promotion logic from the current end of `azure-pipelines-cd.yaml`; the final screenshot does not show all remaining lines.
-• Confirm which Azure DevOps environments currently have approvals/checks and who the approver groups are.
-• Confirm secure-file rotation ownership and the standard request process for new/rotated GCP service-account keys.
-• Consider adding a short rollback section: how to route traffic back to the previous Cloud Run revision and how to select a previously known-good image tag.
-11. One-page Handoff Summary
-• CI: local YAML calls EPI-owned shared templates. Contact EPI for shared CI/template issues.
-• CD: local template resolves an image tag, transfers the image from Lucius/JFrog to GAR, deploys Cloud Run candidate revisions, verifies readiness, and promotes traffic where configured.
-• Existing-image path: set `runBuild=false` and provide `imageVersion`. Missing version is a configuration error.
-• Secrets: keep GCP JSON keys and Lucius auth in Azure DevOps Library > Secure files; use `DownloadSecureFile@1`.
-• Approvals: configure in Azure DevOps Environments > Approvals and checks for protected UAT/PROD deployments.
-• Vulnerabilities: review JFrog Xray. Fix vulnerable dependencies/base images; escalate shared-pipeline issues to EPI.
-CI/CD Pipeline Basic Notes | Draft from screenshots | Page
+<%@ Page AutoEventWireup="true" CodeBehind="D158302.aspx.cbl" Inherits="PCPM.D158302" %>                                                                                                        
+                                                                                                                                                                                                        
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">                                                                               
+                                                                                                                                                                                                        
+<html xmlns="http://www.w3.org/1999/xhtml">                                                                                                                                                             
+<head id="Head1" runat="server">                                                                                                                                                                        
+      <title>D158302</title>        
+      <link href="Styles/SiteCss.css" rel="stylesheet" type="text/css" />                                                                                                                                                                     
+      <script type="text/javascript" src="scripts/newUINAV.js"></script>                                                                                                                                
+<style type="text/css"> span {white-space: pre;} </style>                                                                                                                                               
+</head>                                                                                                                                                                                                 
+<body onload="f_setfocus(form1);" bgcolor="#F2F3FF" style="height: 30px; white-space: pre">                                                                                                             
+    <form id="form1" runat="server" style="font-family: 'Courier New'; font-weight: bold;">                                                                                                             
+    <asp:Label ID="Label001" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00010px; top: 00025px; position: absolute"                                                                                                                             
+        Text='ACTION'></asp:Label>                                                                                                                                                                      
+    <asp:TextBox ID="S_ACTION" runat="server"                                                                                                                                                           
+        style=" z-index: 1; left: 00090px; top: 00025px; position: absolute; width: 00024px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00003" TabIndex="001"                                                                                                                                                               
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="Label002" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00200px; top: 00025px; position: absolute"                                                                                                                             
+        Text='ARDOT PRE-CONSTRUCTION PROJECT MONITORING'></asp:Label>                                                                                                                                    
+    <asp:Label ID="Label003" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00710px; top: 00025px; position: absolute"                                                                                                                             
+        Text='D158302'></asp:Label>                                                                                                                                                                     
+    <asp:Label ID="Label004" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00010px; top: 00050px; position: absolute"                                                                                                                             
+        Text='SCREEN'></asp:Label>                                                                                                                                                                      
+    <asp:Label ID="Label005" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00090px; top: 00050px; position: absolute"                                                                                                                             
+        Text='302'></asp:Label>                                                                                                                                                                         
+    <asp:Label ID="Label006" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00250px; top: 00050px; position: absolute"                                                                                                                             
+        Text='INQUIRY FUNCTIONAL AREA STATUS'></asp:Label>                                                                                                                                              
+    <asp:Label ID="S_DATE_R" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00680px; top: 00050px; position: absolute"                                                                                                                             
+        Text='00/00/0000'></asp:Label>                                                                                                                                                                  
+    <asp:Label ID="Label008" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00010px; top: 00075px; position: absolute"                                                                                                                             
+        Text='============================================================================='></asp:Label>                                                                                               
+    <asp:Label ID="Label009" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00010px; top: 00100px; position: absolute"                                                                                                                             
+        Text='JOB NUMBER'></asp:Label>                                                                                                                                                                  
+    <asp:TextBox ID="S_JOBNO" runat="server"                                                                                                                                                            
+        style=" z-index: 1; left: 00130px; top: 00100px; position: absolute; width: 00080px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00010" ReadOnly="True" BackColor="LightGray" TabIndex="002"                                                                                                                         
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="Label010" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00290px; top: 00100px; position: absolute"                                                                                                                             
+        Text='FA'></asp:Label>                                                                                                                                                                          
+    <asp:TextBox ID="S_FUNC_AREA" runat="server"                                                                                                                                                        
+        style=" z-index: 1; left: 00330px; top: 00100px; position: absolute; width: 00016px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00002" ReadOnly="True" BackColor="LightGray" TabIndex="003"                                                                                                                         
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="S_FUNC_AREA_DESC" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00390px; top: 00100px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="Label012" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00670px; top: 00100px; position: absolute"                                                                                                                             
+        Text='STATUS:'></asp:Label>                                                                                                                                                                     
+    <asp:Label ID="S_FA_STATUS" runat="server"                                                                                                                                                          
+        style="z-index: 1; left: 00760px; top: 00100px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="Label014" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00270px; top: 00125px; position: absolute"                                                                                                                             
+        Text='------------------DATES--------------------'></asp:Label>                                                                                                                                 
+    <asp:Label ID="Label015" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00010px; top: 00150px; position: absolute"                                                                                                                             
+        Text='PERCENT COMPLETE'></asp:Label>                                                                                                                                                            
+    <asp:Label ID="S_FA_PERCENT" runat="server"                                                                                                                                                         
+        style="z-index: 1; left: 00190px; top: 00150px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="Label017" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00280px; top: 00150px; position: absolute"                                                                                                                             
+        Text='START'></asp:Label>                                                                                                                                                                       
+    <asp:Label ID="Label018" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00380px; top: 00150px; position: absolute"                                                                                                                             
+        Text='PROJ COM'></asp:Label>                                                                                                                                                                    
+    <asp:Label ID="Label019" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00490px; top: 00150px; position: absolute"                                                                                                                             
+        Text='COMPLETE'></asp:Label>                                                                                                                                                                    
+    <asp:Label ID="Label020" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00620px; top: 00150px; position: absolute"                                                                                                                             
+        Text='UPDATED'></asp:Label>                                                                                                                                                                     
+    <asp:Label ID="Label021" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00730px; top: 00150px; position: absolute"                                                                                                                             
+        Text='USR'></asp:Label>                                                                                                                                                                         
+    <asp:Label ID="S_FA_START_DATE" runat="server"                                                                                                                                                      
+        style="z-index: 1; left: 00270px; top: 00175px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_FA_PROJ_END" runat="server"                                                                                                                                                        
+        style="z-index: 1; left: 00380px; top: 00175px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_FA_END" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00490px; top: 00175px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_FA_LAST_UPDATED" runat="server"                                                                                                                                                    
+        style="z-index: 1; left: 00600px; top: 00175px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_USERID_R" runat="server"                                                                                                                                                           
+        style="z-index: 1; left: 00710px; top: 00175px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="Label027" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00010px; top: 00200px; position: absolute"                                                                                                                             
+        Text='HISTORY:'></asp:Label>                                                                                                                                                                    
+    <asp:TextBox ID="S_HISTORY" runat="server"                                                                                                                                                          
+        style=" z-index: 1; left: 00110px; top: 00200px; position: absolute; width: 00008px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00001" TabIndex="004"                                                                                                                                                               
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="Label028" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00300px; top: 00225px; position: absolute"                                                                                                                             
+        Text='REMARKS WORK AREA'></asp:Label>                                                                                                                                                           
+    <asp:Label ID="Label029" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00010px; top: 00250px; position: absolute"                                                                                                                             
+        Text='SEL'></asp:Label>                                                                                                                                                                         
+    <asp:Label ID="Label030" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00140px; top: 00250px; position: absolute"                                                                                                                             
+        Text='REMARKS:'></asp:Label>                                                                                                                                                                    
+    <asp:Label ID="Label031" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00600px; top: 00250px; position: absolute"                                                                                                                             
+        Text='DATE'></asp:Label>                                                                                                                                                                        
+    <asp:Label ID="Label032" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00690px; top: 00250px; position: absolute"                                                                                                                             
+        Text='TP'></asp:Label>                                                                                                                                                                          
+    <asp:Label ID="Label033" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00720px; top: 00250px; position: absolute"                                                                                                                             
+        Text='SF'></asp:Label>                                                                                                                                                                          
+    <asp:Label ID="Label034" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00760px; top: 00250px; position: absolute"                                                                                                                             
+        Text='DF'></asp:Label>                                                                                                                                                                          
+    <asp:TextBox ID="S_SELECT_R_1" runat="server"                                                                                                                                                       
+        style=" z-index: 1; left: 00020px; top: 00275px; position: absolute; width: 00008px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00001" ReadOnly="True" BackColor="LightGray" TabIndex="005"                                                                                                                         
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="S_REMARK_R_1" runat="server"                                                                                                                                                         
+        style="z-index: 1; left: 00050px; top: 00275px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_RMK_LAST_UPDATED_1" runat="server"                                                                                                                                                 
+        style="z-index: 1; left: 00570px; top: 00275px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REMTYPE_1" runat="server"                                                                                                                                                          
+        style="z-index: 1; left: 00680px; top: 00275px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_STA_FLAG_1" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00720px; top: 00275px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_DIS_FLAG_1" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00760px; top: 00275px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:TextBox ID="S_SELECT_R_2" runat="server"                                                                                                                                                       
+        style=" z-index: 1; left: 00020px; top: 00300px; position: absolute; width: 00008px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00001" ReadOnly="True" BackColor="LightGray" TabIndex="006"                                                                                                                         
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="S_REMARK_R_2" runat="server"                                                                                                                                                         
+        style="z-index: 1; left: 00050px; top: 00300px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_RMK_LAST_UPDATED_2" runat="server"                                                                                                                                                 
+        style="z-index: 1; left: 00570px; top: 00300px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REMTYPE_2" runat="server"                                                                                                                                                          
+        style="z-index: 1; left: 00680px; top: 00300px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_STA_FLAG_2" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00720px; top: 00300px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_DIS_FLAG_2" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00760px; top: 00300px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:TextBox ID="S_SELECT_R_3" runat="server"                                                                                                                                                       
+        style=" z-index: 1; left: 00020px; top: 00325px; position: absolute; width: 00008px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00001" ReadOnly="True" BackColor="LightGray" TabIndex="007"                                                                                                                         
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="S_REMARK_R_3" runat="server"                                                                                                                                                         
+        style="z-index: 1; left: 00050px; top: 00325px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_RMK_LAST_UPDATED_3" runat="server"                                                                                                                                                 
+        style="z-index: 1; left: 00570px; top: 00325px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REMTYPE_3" runat="server"                                                                                                                                                          
+        style="z-index: 1; left: 00680px; top: 00325px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_STA_FLAG_3" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00720px; top: 00325px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_DIS_FLAG_3" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00760px; top: 00325px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:TextBox ID="S_SELECT_R_4" runat="server"                                                                                                                                                       
+        style=" z-index: 1; left: 00020px; top: 00350px; position: absolute; width: 00008px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00001" ReadOnly="True" BackColor="LightGray" TabIndex="008"                                                                                                                         
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="S_REMARK_R_4" runat="server"                                                                                                                                                         
+        style="z-index: 1; left: 00050px; top: 00350px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_RMK_LAST_UPDATED_4" runat="server"                                                                                                                                                 
+        style="z-index: 1; left: 00570px; top: 00350px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REMTYPE_4" runat="server"                                                                                                                                                          
+        style="z-index: 1; left: 00680px; top: 00350px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_STA_FLAG_4" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00720px; top: 00350px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_DIS_FLAG_4" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00760px; top: 00350px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:TextBox ID="S_SELECT_R_5" runat="server"                                                                                                                                                       
+        style=" z-index: 1; left: 00020px; top: 00375px; position: absolute; width: 00008px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00001" ReadOnly="True" BackColor="LightGray" TabIndex="009"                                                                                                                         
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="S_REMARK_R_5" runat="server"                                                                                                                                                         
+        style="z-index: 1; left: 00050px; top: 00375px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_RMK_LAST_UPDATED_5" runat="server"                                                                                                                                                 
+        style="z-index: 1; left: 00570px; top: 00375px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REMTYPE_5" runat="server"                                                                                                                                                          
+        style="z-index: 1; left: 00680px; top: 00375px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_STA_FLAG_5" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00720px; top: 00375px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_REM_DIS_FLAG_5" runat="server"                                                                                                                                                     
+        style="z-index: 1; left: 00760px; top: 00375px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="Label060" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00020px; top: 00400px; position: absolute"                                                                                                                             
+        Text="ENTER 'A' 'D' OR 'U' IN THE SELECTION FIELD TO ACCESS THE DESIRED FUNCTION"></asp:Label>                                                                                                  
+    <asp:Label ID="Label061" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00150px; top: 00450px; position: absolute"                                                                                                                             
+        Text='LATEST REMARK MADE BY'></asp:Label>                                                                                                                                                       
+    <asp:Label ID="S_LR_FUNC_AREA" runat="server"                                                                                                                                                       
+        style="z-index: 1; left: 00380px; top: 00450px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_LR_USERID" runat="server"                                                                                                                                                          
+        style="z-index: 1; left: 00420px; top: 00450px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:TextBox ID="S_LR_SELECT" runat="server"                                                                                                                                                        
+        style=" z-index: 1; left: 00020px; top: 00500px; position: absolute; width: 00008px"                                                                                                            
+        onfocus="javascript: skipfocus(); caret2one(); SetCoOrds(this); ShowMe(this);" onBlur="javascript: UnShowMe(this);"                                                                             
+        onKeyUp="javascript: FocusNext();" onKeyPress="javascript: upper(); cleartxt(this);" onKeyDown="javascript: tabForward();"                                                                                      
+         MaxLength="00001" ReadOnly="True" BackColor="LightGray" TabIndex="010"                                                                                                                         
+        ></asp:TextBox>                                                                                                                                                                                 
+    <asp:Label ID="S_LR_REMARK" runat="server"                                                                                                                                                          
+        style="z-index: 1; left: 00050px; top: 00500px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_LR_LAST_UPDATED" runat="server"                                                                                                                                                    
+        style="z-index: 1; left: 00570px; top: 00500px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_LR_REMTYPE" runat="server"                                                                                                                                                         
+        style="z-index: 1; left: 00680px; top: 00500px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_LR_REM_STA_FLAG" runat="server"                                                                                                                                                    
+        style="z-index: 1; left: 00720px; top: 00500px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="S_LR_REM_DIS_FLAG" runat="server"                                                                                                                                                    
+        style="z-index: 1; left: 00770px; top: 00500px; position: absolute"                                                                                                                             
+        Text=' '></asp:Label>                                                                                                                                                                           
+    <asp:Label ID="Label069" runat="server"                                                                                                                                                             
+        style="z-index: 1; left: 00010px; top: 00525px; position: absolute"                                                                                                                             
+        Text='-----------------------------------------------------------------------------'></asp:Label>                                                                                               
+    <asp:Label ID="S_PF1" runat="server"                                                                                                                                                                
+        style="z-index: 1; left: 00010px; top: 00550px; position: absolute"                                                                                                                             
+        Text=' F1=HELP'></asp:Label>                                                                                                                                                                    
+    <asp:Label ID="S_PF3" runat="server"                                                                                                                                                                
+        style="z-index: 1; left: 00100px; top: 00550px; position: absolute"                                                                                                                             
+        Text=' F3=PREV'></asp:Label>                                                                                                                                                                    
+    <asp:Label ID="S_PF4" runat="server"                                                                                                                                                                
+        style="z-index: 1; left: 00190px; top: 00550px; position: absolute"                                                                                                                             
+        Text=' F4=SCRLB'></asp:Label>                                                                                                                                                                   
+    <asp:Label ID="S_PF5" runat="server"                                                                                                                                                                
+        style="z-index: 1; left: 00290px; top: 00550px; position: absolute"                                                                                                                             
+        Text=' F5=SCRLF'></asp:Label>                                                                                                                                                                   
+    <asp:Label ID="S_PF6" runat="server"                                                                                                                                                                
+        style="z-index: 1; left: 00390px; top: 00550px; position: absolute"                                                                                                                             
+        Text=' F6=RESET'></asp:Label>                                                                                                                                                                   
+    <asp:Label ID="S_PF7" runat="server"                                                                                                                                                                
+        style="z-index: 1; left: 00490px; top: 00550px; position: absolute"                                                                                                                             
+        Text=' F7=BKWRD'></asp:Label>                                                                                                                                                                   
+    <asp:Label ID="S_PF8" runat="server"                                                                                                                                                                
+        style="z-index: 1; left: 00590px; top: 00550px; position: absolute"                                                                                                                             
+        Text=' F8=FRWRD'></asp:Label>                                                                                                                                                                   
+    <asp:Label ID="S_PF12" runat="server"                                                                                                                                                               
+        style="z-index: 1; left: 00690px; top: 00550px; position: absolute"                                                                                                                             
+        Text=' F12=MAIN'></asp:Label>                                                                                                                                                                   
+    <asp:Label ID="S_ERR_MSG" runat="server"                                                                                                                                                            
+        style="z-index: 1; left: 00010px; top: 00575px; position: absolute"                                                                                                                             
+        Text=' ' ForeColor="Red"></asp:Label>                                                                                                                                                                           
+                                                                                                                                                                                                        
+          <asp:Label ID="OffLine" runat="server"
+          style = "z-index: 1; left: 00020px; top: 0001px; position: absolute"
+          Text=' ' ForeColor="Red"></asp:Label>
+    <div id="hidden filelds" style="position: absolute; top: 655px; left: 30px;">                                                                                                                       
+           <asp:TextBox ID="setCursor" runat="server" ForeColor="#F2F3FF" BackColor="#F2F3FF" ReadOnly="True"                                                                                           
+               BorderStyle="None" onfocus="javascript: skipfocus();"></asp:TextBox>                                                                                                                     
+        <asp:TextBox ID="CPOSN2" runat="server" ForeColor="#F2F3FF"  BackColor="#F2F3FF"                                                                                                                
+               ReadOnly="True" BorderStyle="None" onfocus="javascript: skipfocus();"></asp:TextBox>                                                                                                     
+        <asp:HiddenField ID="KEYPRESS" runat="server" value="0" />                                                                                                                                      
+        <asp:HiddenField ID="CPOSN" runat="server" value="0" />                                                                                                                                         
+        <asp:HiddenField ID="UCTSESSION" runat="server" value="0" />                                                                                                                                    
+        <asp:TextBox ID="ACT" runat="server" ForeColor="#F2F3FF" BackColor="#F2F3FF"                                                                                                                    
+               ReadOnly="True" BorderStyle="None" onfocus="javascript: skipfocus();"></asp:TextBox>                                                                                                     
+        <asp:TextBox ID="HELPFLD" runat="server" ForeColor="#F2F3FF" BackColor="#F2F3FF"                                                                                                                
+               ReadOnly="True" BorderStyle="None" onfocus="javascript: skipfocus();"></asp:TextBox>                                                                                                     
+    </div>                                                                                                                                                                                              
+                                                                                                                                                                                                        
+    </form>                                                                                                                                                                                             
+</body>                                                                                                                                                                                                 
+</html>                                                                                                                                                                                                 
+                                                                                                                                                                                                        
