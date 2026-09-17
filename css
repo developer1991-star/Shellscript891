@@ -1,1219 +1,743 @@
 using System.Data;
-
 using System.Globalization;
-
 using Microsoft.Data.SqlClient;
-
 using Microsoft.Extensions.Configuration;
-
 using PCPM.Application.D158302;
 
 namespace PCPM.Infrastructure.D158302;
 
 public sealed class D158302Repository : ID158302Repository
-
 {
-
     private readonly string _connectionString;
 
     public D158302Repository(IConfiguration configuration)
-
     {
-
         _connectionString =
-
             configuration.GetConnectionString("PCPM")
-
             ?? throw new InvalidOperationException(
-
                 "Connection string 'PCPM' was not found.");
-
     }
 
     // ============================================================
-
     // STATUS
-
     // Legacy: LOAD-STATUS-REC
-
     //
-
     // STATUS_R = '01'
-
     // DELFLAG = blank
-
     // FUNC_AREA = requested FA
-
     // JOBNO >= requested job
-
     // ============================================================
 
     public async Task<D158302StatusRecord?> FindStatusAsync(
-
         string jobNumber,
-
         string functionalArea,
-
         CancellationToken cancellationToken = default)
-
     {
-
         const string sql = """
-
             SELECT TOP (1)
-
                 JOBNO,
-
                 FUNC_AREA,
-
                 FA_STATUS,
-
                 FA_PERCENT,
-
                 FA_START_DATE,
-
                 FA_PROJ_END,
-
                 FA_END,
-
                 LAST_UPDATED,
-
                 USERID_R
-
             FROM [PRECONSTRUCTION].[dbo].[T158_PRECON_STATUS]
-
             WHERE LTRIM(RTRIM(STATUS_R)) = '01'
-
               AND ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
-
               AND LTRIM(RTRIM(FUNC_AREA)) =
-
                   LTRIM(RTRIM(@FunctionalArea))
-
               AND LTRIM(RTRIM(JOBNO)) >=
-
                   LTRIM(RTRIM(@JobNumber))
-
             ORDER BY
-
                 LTRIM(RTRIM(JOBNO)) ASC,
-
                 LTRIM(RTRIM(FUNC_AREA)) ASC;
-
             """;
 
         await using var connection =
-
             new SqlConnection(_connectionString);
 
         await connection.OpenAsync(cancellationToken);
 
         await using var command =
-
             new SqlCommand(sql, connection);
 
         AddJobNumberParameter(command, jobNumber);
-
         AddFunctionalAreaParameter(command, functionalArea);
 
         await using var reader =
-
             await command.ExecuteReaderAsync(cancellationToken);
 
         if (!await reader.ReadAsync(cancellationToken))
-
             return null;
 
         return MapStatus(reader);
-
     }
 
     // ============================================================
-
     // F8 STATUS FORWARD
-
     // Legacy: STAT-SCROLL-FWD
-
     // ============================================================
 
     public async Task<D158302StatusRecord?> FindNextStatusAsync(
-
         string jobNumber,
-
         string functionalArea,
-
         CancellationToken cancellationToken = default)
-
     {
-
         const string sql = """
-
             SELECT TOP (1)
-
                 JOBNO,
-
                 FUNC_AREA,
-
                 FA_STATUS,
-
                 FA_PERCENT,
-
                 FA_START_DATE,
-
                 FA_PROJ_END,
-
                 FA_END,
-
                 LAST_UPDATED,
-
                 USERID_R
-
             FROM [PRECONSTRUCTION].[dbo].[T158_PRECON_STATUS]
-
             WHERE LTRIM(RTRIM(STATUS_R)) = '01'
-
               AND ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
-
               AND LTRIM(RTRIM(FUNC_AREA)) =
-
                   LTRIM(RTRIM(@FunctionalArea))
-
               AND LTRIM(RTRIM(JOBNO)) >
-
                   LTRIM(RTRIM(@JobNumber))
-
             ORDER BY
-
                 LTRIM(RTRIM(JOBNO)) ASC,
-
                 LTRIM(RTRIM(FUNC_AREA)) ASC;
-
             """;
 
         await using var connection =
-
             new SqlConnection(_connectionString);
 
         await connection.OpenAsync(cancellationToken);
 
         await using var command =
-
             new SqlCommand(sql, connection);
 
         AddJobNumberParameter(command, jobNumber);
-
         AddFunctionalAreaParameter(command, functionalArea);
 
         await using var reader =
-
             await command.ExecuteReaderAsync(cancellationToken);
 
         if (!await reader.ReadAsync(cancellationToken))
-
             return null;
 
         return MapStatus(reader);
-
     }
 
     // ============================================================
-
     // F7 STATUS BACKWARD
-
     // Legacy: STAT-SCROLL-BWD
-
     // ============================================================
 
     public async Task<D158302StatusRecord?> FindPreviousStatusAsync(
-
         string jobNumber,
-
         string functionalArea,
-
         CancellationToken cancellationToken = default)
-
     {
-
         const string sql = """
-
             SELECT TOP (1)
-
                 JOBNO,
-
                 FUNC_AREA,
-
                 FA_STATUS,
-
                 FA_PERCENT,
-
                 FA_START_DATE,
-
                 FA_PROJ_END,
-
                 FA_END,
-
                 LAST_UPDATED,
-
                 USERID_R
-
             FROM [PRECONSTRUCTION].[dbo].[T158_PRECON_STATUS]
-
             WHERE LTRIM(RTRIM(STATUS_R)) = '01'
-
               AND ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
-
               AND LTRIM(RTRIM(FUNC_AREA)) =
-
                   LTRIM(RTRIM(@FunctionalArea))
-
               AND LTRIM(RTRIM(JOBNO)) <
-
                   LTRIM(RTRIM(@JobNumber))
-
             ORDER BY
-
                 LTRIM(RTRIM(JOBNO)) DESC,
-
                 LTRIM(RTRIM(FUNC_AREA)) DESC;
-
             """;
 
         await using var connection =
-
             new SqlConnection(_connectionString);
 
         await connection.OpenAsync(cancellationToken);
 
         await using var command =
-
             new SqlCommand(sql, connection);
 
         AddJobNumberParameter(command, jobNumber);
-
         AddFunctionalAreaParameter(command, functionalArea);
 
         await using var reader =
-
             await command.ExecuteReaderAsync(cancellationToken);
 
         if (!await reader.ReadAsync(cancellationToken))
-
             return null;
 
         return MapStatus(reader);
-
     }
 
     // ============================================================
-
     // FUNCTIONAL AREA DESCRIPTION
-
     // Legacy: V158-FAR104R0 / T158_FUNC_AREA
-
     // ============================================================
 
     public async Task<string?> GetFunctionalAreaDescriptionAsync(
-
         string functionalArea,
-
         CancellationToken cancellationToken = default)
-
     {
-
         const string sql = """
-
             SELECT TOP (1)
-
                 FUNC_AREA_DESC
-
             FROM [PRECONSTRUCTION].[dbo].[T158_FUNC_AREA]
-
             WHERE LTRIM(RTRIM(FUNC_AREA)) =
-
                   LTRIM(RTRIM(@FunctionalArea))
-
             ORDER BY LTRIM(RTRIM(FUNC_AREA)) ASC;
-
             """;
 
         await using var connection =
-
             new SqlConnection(_connectionString);
 
         await connection.OpenAsync(cancellationToken);
 
         await using var command =
-
             new SqlCommand(sql, connection);
 
         AddFunctionalAreaParameter(command, functionalArea);
 
         var result =
-
             await command.ExecuteScalarAsync(cancellationToken);
 
         if (result is null || result == DBNull.Value)
-
             return null;
 
         return result.ToString()?.Trim();
-
     }
 
     // ============================================================
-
     // REMARK SCROLL FORWARD
-
     //
-
     // This method also handles the INITIAL load.
-
     //
-
     // bottomKey == null:
-
     //     newest remarks first
-
     //
-
     // bottomKey != null:
-
     //     records older than the current bottom record
-
     //
-
     // Legacy screen order:
-
     // LAST_UPDATED DESC
-
     // REMTYPE DESC
-
     // REMSEQ DESC
-
     // ============================================================
 
     public async Task<IReadOnlyList<D158302RemarkRecord>>
-
         GetRemarksForwardAsync(
-
             string jobNumber,
-
             string functionalArea,
-
             string history,
-
             D158302RemarkKey? bottomKey,
-
             int count,
-
             CancellationToken cancellationToken = default)
-
     {
-
         if (count <= 0)
-
             return Array.Empty<D158302RemarkRecord>();
 
         var sql = """
-
             SELECT TOP (@Count)
-
                 JOBNO,
-
                 FUNC_AREA,
-
                 REMARK_R,
-
                 LAST_UPDATED,
-
                 REMTYPE,
-
                 REMSEQ,
-
                 REM_STA_FLAG,
-
                 REM_DIS_FLAG,
-
                 HIST_FLAG,
-
                 USERID_R
-
             FROM [PRECONSTRUCTION].[dbo].[T158_REMARKS]
-
             WHERE ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
-
               AND LTRIM(RTRIM(HIST_FLAG)) =
-
                   LTRIM(RTRIM(@History))
-
               AND LTRIM(RTRIM(JOBNO)) =
-
                   LTRIM(RTRIM(@JobNumber))
-
               AND LTRIM(RTRIM(FUNC_AREA)) =
-
                   LTRIM(RTRIM(@FunctionalArea))
-
             """;
 
         if (bottomKey is not null)
-
         {
-
             sql += """
-
                 
-
               AND
-
               (
-
                     LTRIM(RTRIM(LAST_UPDATED)) < @LastUpdated
 
                  OR
-
                  (
-
                      LTRIM(RTRIM(LAST_UPDATED)) = @LastUpdated
-
                      AND REMTYPE < @RemarkType
-
                  )
 
                  OR
-
                  (
-
                      LTRIM(RTRIM(LAST_UPDATED)) = @LastUpdated
-
                      AND REMTYPE = @RemarkType
-
                      AND REMSEQ < @RemarkSequence
-
                  )
-
               )
-
                 """;
-
         }
 
         sql += """
-
             
-
             ORDER BY
-
                 LAST_UPDATED DESC,
-
                 REMTYPE DESC,
-
                 REMSEQ DESC;
-
             """;
 
         var records =
-
             new List<D158302RemarkRecord>();
 
         await using var connection =
-
             new SqlConnection(_connectionString);
 
         await connection.OpenAsync(cancellationToken);
 
         await using var command =
-
             new SqlCommand(sql, connection);
 
         AddJobNumberParameter(command, jobNumber);
-
         AddFunctionalAreaParameter(command, functionalArea);
-
         AddHistoryParameter(command, history);
 
         command.Parameters.Add(
-
             "@Count",
-
             SqlDbType.Int).Value = count;
 
         if (bottomKey is not null)
-
         {
-
             AddRemarkKeyParameters(
-
                 command,
-
                 bottomKey);
-
         }
 
         await using var reader =
-
             await command.ExecuteReaderAsync(cancellationToken);
 
         while (await reader.ReadAsync(cancellationToken))
-
         {
-
             records.Add(MapRemark(reader));
-
         }
 
         return records;
-
     }
 
     // ============================================================
-
     // REMARK SCROLL BACKWARD
-
     // Legacy: RMK-SCROLL-BWD
-
     //
-
     // Fetch records newer than the current TOP record.
-
     // SQL reads ASC like legacy.
-
     // Then reverse them so screen remains newest -> oldest.
-
     // ============================================================
 
     public async Task<IReadOnlyList<D158302RemarkRecord>>
-
         GetRemarksBackwardAsync(
-
             string jobNumber,
-
             string functionalArea,
-
             string history,
-
             D158302RemarkKey topKey,
-
             int count,
-
             CancellationToken cancellationToken = default)
-
     {
-
         if (count <= 0)
-
             return Array.Empty<D158302RemarkRecord>();
 
         const string sql = """
-
             SELECT TOP (@Count)
-
                 JOBNO,
-
                 FUNC_AREA,
-
                 REMARK_R,
-
                 LAST_UPDATED,
-
                 REMTYPE,
-
                 REMSEQ,
-
                 REM_STA_FLAG,
-
                 REM_DIS_FLAG,
-
                 HIST_FLAG,
-
                 USERID_R
-
             FROM [PRECONSTRUCTION].[dbo].[T158_REMARKS]
-
             WHERE ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
-
               AND LTRIM(RTRIM(HIST_FLAG)) =
-
                   LTRIM(RTRIM(@History))
-
               AND LTRIM(RTRIM(JOBNO)) =
-
                   LTRIM(RTRIM(@JobNumber))
-
               AND LTRIM(RTRIM(FUNC_AREA)) =
-
                   LTRIM(RTRIM(@FunctionalArea))
-
               AND
-
               (
-
                     LTRIM(RTRIM(LAST_UPDATED)) > @LastUpdated
 
                  OR
-
                  (
-
                      LTRIM(RTRIM(LAST_UPDATED)) = @LastUpdated
-
                      AND REMTYPE > @RemarkType
-
                  )
 
                  OR
-
                  (
-
                      LTRIM(RTRIM(LAST_UPDATED)) = @LastUpdated
-
                      AND REMTYPE = @RemarkType
-
                      AND REMSEQ > @RemarkSequence
-
                  )
-
               )
-
             ORDER BY
-
                 LAST_UPDATED ASC,
-
                 REMTYPE ASC,
-
                 REMSEQ ASC;
-
             """;
 
         var records =
-
             new List<D158302RemarkRecord>();
 
         await using var connection =
-
             new SqlConnection(_connectionString);
 
         await connection.OpenAsync(cancellationToken);
 
         await using var command =
-
             new SqlCommand(sql, connection);
 
         AddJobNumberParameter(command, jobNumber);
-
         AddFunctionalAreaParameter(command, functionalArea);
-
         AddHistoryParameter(command, history);
 
         command.Parameters.Add(
-
             "@Count",
-
             SqlDbType.Int).Value = count;
 
         AddRemarkKeyParameters(
-
             command,
-
             topKey);
 
         await using var reader =
-
             await command.ExecuteReaderAsync(cancellationToken);
 
         while (await reader.ReadAsync(cancellationToken))
-
         {
-
             records.Add(MapRemark(reader));
-
         }
 
         // Query is ASC for reverse browsing.
-
         // Screen must still display newest -> oldest.
-
         records.Reverse();
 
         return records;
-
     }
 
     // ============================================================
-
     // LATEST REMARK FOR JOB
-
     // Legacy: LOAD-LAST-RMK
-
     //
-
     // Notice:
-
     //   No functional area filter.
-
     //   HIST_FLAG must be N.
-
     // ============================================================
 
     public async Task<D158302RemarkRecord?> GetLatestJobRemarkAsync(
-
         string jobNumber,
-
         CancellationToken cancellationToken = default)
-
     {
-
         const string sql = """
-
             SELECT TOP (1)
-
                 JOBNO,
-
                 FUNC_AREA,
-
                 REMARK_R,
-
                 LAST_UPDATED,
-
                 REMTYPE,
-
                 REMSEQ,
-
                 REM_STA_FLAG,
-
                 REM_DIS_FLAG,
-
                 HIST_FLAG,
-
                 USERID_R
-
             FROM [PRECONSTRUCTION].[dbo].[T158_REMARKS]
-
             WHERE ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
-
               AND LTRIM(RTRIM(HIST_FLAG)) = 'N'
-
               AND LTRIM(RTRIM(JOBNO)) =
-
                   LTRIM(RTRIM(@JobNumber))
-
             ORDER BY
-
                 LAST_UPDATED DESC,
-
                 REMSEQ DESC,
-
                 REMTYPE DESC;
-
             """;
 
         await using var connection =
-
             new SqlConnection(_connectionString);
 
         await connection.OpenAsync(cancellationToken);
 
         await using var command =
-
             new SqlCommand(sql, connection);
 
         AddJobNumberParameter(command, jobNumber);
 
         await using var reader =
-
             await command.ExecuteReaderAsync(cancellationToken);
 
         if (!await reader.ReadAsync(cancellationToken))
-
             return null;
 
         return MapRemark(reader);
-
     }
 
     // ============================================================
-
     // PCPM MESSAGE TABLE
-
     // Legacy: DISPLAY-ERR-MSG
-
     // ============================================================
 
     public async Task<string?> GetMessageAsync(
-
         string messageId,
-
         CancellationToken cancellationToken = default)
-
     {
-
         const string sql = """
-
             SELECT TOP (1)
-
                 MESSAGE_TEXT
-
             FROM [PRECONSTRUCTION].[dbo].[T158_MESSAGE]
-
             WHERE LTRIM(RTRIM(T158_MESSAGE_PRIMARY_KEY)) =
-
                   LTRIM(RTRIM(@MessageId))
-
             ORDER BY T158_MESSAGE_PRIMARY_KEY ASC;
-
             """;
 
         await using var connection =
-
             new SqlConnection(_connectionString);
 
         await connection.OpenAsync(cancellationToken);
 
         await using var command =
-
             new SqlCommand(sql, connection);
 
         command.Parameters.Add(
-
             "@MessageId",
-
             SqlDbType.VarChar,
-
             6).Value = Normalize(messageId);
 
         var result =
-
             await command.ExecuteScalarAsync(cancellationToken);
 
         if (result is null || result == DBNull.Value)
-
             return null;
 
         return result.ToString()?.Trim();
-
     }
 
     // ============================================================
-
     // STATUS MAPPING
-
     // ============================================================
 
     private static D158302StatusRecord MapStatus(
-
         SqlDataReader reader)
-
     {
-
         return new D158302StatusRecord
-
         {
-
             JobNumber =
-
                 ReadString(reader, "JOBNO"),
 
             FunctionalArea =
-
                 ReadString(reader, "FUNC_AREA"),
 
             FunctionalAreaStatus =
-
                 ReadString(reader, "FA_STATUS"),
 
             PercentComplete =
-
                 ReadString(reader, "FA_PERCENT"),
 
             StartDate =
-
                 ReadString(reader, "FA_START_DATE"),
 
             ProjectedEndDate =
-
                 ReadString(reader, "FA_PROJ_END"),
 
             EndDate =
-
                 ReadString(reader, "FA_END"),
 
             LastUpdated =
-
                 ReadString(reader, "LAST_UPDATED"),
 
             UserId =
-
                 ReadString(reader, "USERID_R")
-
         };
-
     }
 
     // ============================================================
-
     // REMARK MAPPING
-
     // ============================================================
 
     private static D158302RemarkRecord MapRemark(
-
         SqlDataReader reader)
-
     {
-
         return new D158302RemarkRecord
-
         {
-
             JobNumber =
-
                 ReadString(reader, "JOBNO"),
 
             FunctionalArea =
-
                 ReadString(reader, "FUNC_AREA"),
 
             Remark =
-
                 ReadString(reader, "REMARK_R"),
 
             LastUpdated =
-
                 ReadString(reader, "LAST_UPDATED"),
 
             RemarkType =
-
                 ReadInt(reader, "REMTYPE"),
 
             RemarkSequence =
-
                 ReadInt(reader, "REMSEQ"),
 
             StatusFlag =
-
                 ReadString(reader, "REM_STA_FLAG"),
 
             // Your Application model calls this DeleteFlag.
-
             // On Screen 302 this corresponds to the legacy
-
             // REM-DIS-FLAG field.
-
             DeleteFlag =
-
                 ReadString(reader, "REM_DIS_FLAG"),
 
             HistoryFlag =
-
                 ReadString(reader, "HIST_FLAG"),
 
             UserId =
-
                 ReadString(reader, "USERID_R")
-
         };
-
     }
 
     // ============================================================
-
     // SQL PARAMETERS
-
     // ============================================================
 
     private static void AddJobNumberParameter(
-
         SqlCommand command,
-
         string? jobNumber)
-
     {
-
         command.Parameters.Add(
-
             "@JobNumber",
-
             SqlDbType.VarChar,
-
             10).Value = Normalize(jobNumber);
-
     }
 
     private static void AddFunctionalAreaParameter(
-
         SqlCommand command,
-
         string? functionalArea)
-
     {
-
         command.Parameters.Add(
-
             "@FunctionalArea",
-
             SqlDbType.VarChar,
-
             2).Value = Normalize(functionalArea);
-
     }
 
     private static void AddHistoryParameter(
-
         SqlCommand command,
-
         string? history)
-
     {
-
         var value = Normalize(history);
 
         if (value != "Y")
-
             value = "N";
 
         command.Parameters.Add(
-
             "@History",
-
             SqlDbType.VarChar,
-
             1).Value = value;
-
     }
 
     private static void AddRemarkKeyParameters(
-
         SqlCommand command,
-
         D158302RemarkKey key)
-
     {
-
         command.Parameters.Add(
-
             "@LastUpdated",
-
             SqlDbType.VarChar,
-
             8).Value = Normalize(key.LastUpdated);
 
         command.Parameters.Add(
-
             "@RemarkType",
-
             SqlDbType.Int).Value = key.RemarkType;
 
         command.Parameters.Add(
-
             "@RemarkSequence",
-
             SqlDbType.Int).Value = key.RemarkSequence;
-
     }
 
     // ============================================================
-
     // VALUE HELPERS
-
     // ============================================================
 
     private static string ReadString(
-
         SqlDataReader reader,
-
         string columnName)
-
     {
-
         var value = reader[columnName];
 
         if (value is null || value == DBNull.Value)
-
             return "";
 
         // Handles database DATE/DATETIME if LAST_UPDATED is
-
         // represented as an actual SQL date.
-
         if (value is DateTime date)
-
         {
-
             return date.ToString(
-
                 "yyyyMMdd",
-
                 CultureInfo.InvariantCulture);
-
         }
 
         return Convert.ToString(
-
                    value,
-
                    CultureInfo.InvariantCulture)
-
                    ?.Trim()
-
                ?? "";
-
     }
 
     private static int ReadInt(
-
         SqlDataReader reader,
-
         string columnName)
-
     {
-
         var value = reader[columnName];
 
         if (value is null || value == DBNull.Value)
-
             return 0;
 
         if (value is int intValue)
-
             return intValue;
 
         if (value is short shortValue)
-
             return shortValue;
 
         if (value is long longValue)
-
             return checked((int)longValue);
 
         if (value is decimal decimalValue)
-
             return Convert.ToInt32(decimalValue);
 
         return int.TryParse(
-
             value.ToString()?.Trim(),
-
             out var parsed)
-
             ? parsed
-
             : 0;
-
     }
 
     private static string Normalize(
-
         string? value)
-
     {
-
         return (value ?? "")
-
             .Replace("'", "")
-
             .Trim()
-
             .ToUpperInvariant();
-
     }
-
 }
