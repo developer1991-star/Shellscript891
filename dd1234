@@ -1,21 +1,21 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using PCPM.Application.D158500;
+using PCPM.Application.D158302;
 
 namespace PCPM.Pages;
 
 public sealed class D158302Model : PageModel
 {
-    private readonly ID158500Service _d158500Service;
+    private readonly ID158302Service _d158302Service;
 
     public D158302Model(
-        ID158500Service d158500Service)
+        ID158302Service d158302Service)
     {
-        _d158500Service = d158500Service;
+        _d158302Service = d158302Service;
     }
 
     // ============================================================
-    // Posted / editable values
+    // POSTED / EDITABLE VALUES
     // ============================================================
 
     [BindProperty]
@@ -32,51 +32,55 @@ public sealed class D158302Model : PageModel
 
     [BindProperty]
     public List<string> Selections { get; set; } =
-        Enumerable.Repeat("", 5).ToList();
+        CreateBlankSelections();
 
     [BindProperty]
     public string LatestSelection { get; set; } = "";
 
+
     // ============================================================
-    // Display model
+    // SCREEN
     // ============================================================
 
-    public D158302Screen Screen { get; private set; } =
-        new();
+    public D158302Screen Screen { get; private set; } = new();
 
     public string DisplayDate =>
         DateTime.Now.ToString("MM/dd/yyyy");
 
     public string ErrorMessage =>
-        Screen.ErrorMessage;
+        Screen.ErrorMessage ?? "";
+
 
     // ============================================================
     // GET
-    //
-    // D158500 currently redirects here using:
-    //
-    // /D158302?jobNumber=xxxx&fa=xx
-    //
     // ============================================================
 
-    public async Task OnGetAsync(
+    public async Task<IActionResult> OnGetAsync(
         string? jobNumber,
         string? fa,
-        string? history,
         CancellationToken cancellationToken)
     {
-        JobNumber = Normalize(jobNumber);
-        FunctionalArea = Normalize(fa);
+        Action = "";
 
-        History = string.IsNullOrWhiteSpace(history)
-            ? "N"
-            : Normalize(history);
+        JobNumber =
+            Normalize(jobNumber);
+
+        FunctionalArea =
+            Normalize(fa);
+
+        History = "N";
 
         EnsureSelections();
 
-        await LoadScreenAsync(cancellationToken);
+        Screen = await _d158302Service.LoadAsync(
+            JobNumber,
+            FunctionalArea,
+            History,
+            cancellationToken);
 
         ApplyScreenToPage();
+
+        return Page();
     }
 
 
@@ -89,236 +93,17 @@ public sealed class D158302Model : PageModel
     {
         NormalizePostedValues();
 
-        await LoadScreenAsync(cancellationToken);
+        EnsureSelections();
 
-        /*
-         * ACTION field.
-         *
-         * The ASPX/ASPX.CBL establishes that ACTION exists and is
-         * uppercased, but the D158302 business COBOL was not supplied.
-         *
-         * Numeric action routing is consistent with the PCPM screens
-         * already migrated, so we can safely retain the normal panel
-         * navigation behavior.
-         */
-        if (!string.IsNullOrWhiteSpace(Action))
-        {
-            if (Action.Equals(
-                    "SO",
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                /*
-                 * Exact SO processing belongs to the main D158302
-                 * business program.
-                 *
-                 * Until that source is supplied, redisplay the screen.
-                 */
-                Screen.ErrorMessage =
-                    "SO PROCESSING FOR D158302 HAS NOT YET BEEN MIGRATED.";
+        var input = BuildInput();
 
-                PreservePostedSelections();
-
-                return Page();
-            }
-
-            if (Action.All(char.IsDigit))
-            {
-                return RedirectToPage(
-                    $"/D158{Action}");
-            }
-        }
-
-        var selectedRows =
-            Selections
-                .Select((value, index) => new
-                {
-                    Value = Normalize(value),
-                    Index = index
-                })
-                .Where(x =>
-                    !string.IsNullOrWhiteSpace(x.Value))
-                .ToList();
-
-        var latestSelection =
-            Normalize(LatestSelection);
-
-        var totalSelections =
-            selectedRows.Count +
-            (string.IsNullOrWhiteSpace(latestSelection)
-                ? 0
-                : 1);
-
-        /*
-         * The wrapper proves that A / D / U selection fields exist,
-         * but it does NOT contain the destination-screen logic.
-         *
-         * Do not invent those destinations.
-         *
-         * Once the actual D158302 business COBOL is available,
-         * replace this section with the real A/D/U routing.
-         */
-        if (totalSelections > 0)
-        {
-            if (totalSelections > 1)
-            {
-                Screen.ErrorMessage =
-                    "ONLY ONE SELECTION MAY BE ENTERED.";
-
-                PreservePostedSelections();
-
-                return Page();
-            }
-
-            var selection =
-                selectedRows.Count == 1
-                    ? selectedRows[0].Value
-                    : latestSelection;
-
-            if (selection is not ("A" or "D" or "U"))
-            {
-                Screen.ErrorMessage =
-                    "ENTER 'A', 'D' OR 'U' IN THE SELECTION FIELD.";
-
-                PreservePostedSelections();
-
-                return Page();
-            }
-
-            /*
-             * Exact navigation is intentionally NOT guessed.
-             */
-            Screen.ErrorMessage =
-                "D158302 REMARK SELECTION ROUTING REQUIRES THE MAIN BUSINESS COBOL.";
-
-            PreservePostedSelections();
-
-            return Page();
-        }
-
-        /*
-         * HISTORY is editable on the legacy screen.
-         *
-         * Default is N.
-         *
-         * We preserve Y/N here, but the actual database effect
-         * depends on the D158302 business COBOL.
-         */
-        if (History is not ("Y" or "N"))
-        {
-            Screen.ErrorMessage =
-                "HISTORY MUST BE 'Y' OR 'N'.";
-
-            return Page();
-        }
+        Screen =
+            await _d158302Service.ProcessEnterAsync(
+                input,
+                cancellationToken);
 
         ApplyScreenToPage();
 
-        return Page();
-    }
-
-
-    // ============================================================
-    // F1 HELP
-    // ============================================================
-
-    public IActionResult OnPostHelp()
-    {
-        NormalizePostedValues();
-
-        return RedirectToPage(
-            "/D158999",
-            new
-            {
-                hscreen = "302",
-                jobNumber = JobNumber,
-                fa = FunctionalArea
-            });
-    }
-
-
-    // ============================================================
-    // F3 PREVIOUS
-    //
-    // D158500 is the screen that currently routes into 302.
-    // ============================================================
-
-    public IActionResult OnPostPrevious()
-    {
-        NormalizePostedValues();
-
-        return RedirectToPage(
-            "/D158500",
-            new
-            {
-                jobNumber = JobNumber
-            });
-    }
-
-
-    // ============================================================
-    // F4 SCROLL BACK / LEFT
-    //
-    // Exact legacy behavior requires D158302 business COBOL.
-    // For now safely reload the current record.
-    // ============================================================
-
-    public async Task<IActionResult> OnPostScrollLeftAsync(
-        CancellationToken cancellationToken)
-    {
-        NormalizePostedValues();
-
-        await LoadScreenAsync(cancellationToken);
-
-        ApplyScreenToPage();
-
-        return Page();
-    }
-
-
-    // ============================================================
-    // F5 SCROLL FORWARD / RIGHT
-    //
-    // Exact legacy behavior requires D158302 business COBOL.
-    // ============================================================
-
-    public async Task<IActionResult> OnPostScrollRightAsync(
-        CancellationToken cancellationToken)
-    {
-        NormalizePostedValues();
-
-        await LoadScreenAsync(cancellationToken);
-
-        ApplyScreenToPage();
-
-        return Page();
-    }
-
-
-    // ============================================================
-    // F6 RESET
-    // ============================================================
-
-    public async Task<IActionResult> OnPostResetAsync(
-        CancellationToken cancellationToken)
-    {
-        JobNumber = Normalize(JobNumber);
-        FunctionalArea = Normalize(FunctionalArea);
-
-        Action = "";
-        History = "N";
-        LatestSelection = "";
-
-        Selections =
-            Enumerable.Repeat("", 5).ToList();
-
-        await LoadScreenAsync(cancellationToken);
-
-        ApplyScreenToPage();
-
-        /*
-         * Clear POST values so Razor does not redisplay values
-         * from ModelState instead of the reset properties.
-         */
         ModelState.Clear();
 
         return Page();
@@ -326,9 +111,134 @@ public sealed class D158302Model : PageModel
 
 
     // ============================================================
-    // F7 BACKWARD
-    //
-    // Main business COBOL required for exact browse ordering.
+    // F1 - HELP
+    // ============================================================
+
+    public IActionResult OnPostHelp()
+    {
+        return RedirectToPage(
+            "/D158999",
+            new
+            {
+                screen = "302"
+            });
+    }
+
+
+    // ============================================================
+    // F3 - PREVIOUS
+    // ============================================================
+
+    public IActionResult OnPostPrevious()
+    {
+        /*
+         * Screen 302 is normally entered from Screen 500.
+         * Preserve the current job number when going back.
+         */
+
+        return RedirectToPage(
+            "/D158500",
+            new
+            {
+                jobNumber = Normalize(JobNumber)
+            });
+    }
+
+
+    // ============================================================
+    // F4 - REMARK SCROLL BACKWARD
+    // ============================================================
+
+    public async Task<IActionResult> OnPostScrollLeftAsync(
+        CancellationToken cancellationToken)
+    {
+        NormalizePostedValues();
+
+        EnsureSelections();
+
+        var input = BuildInput();
+
+        Screen =
+            await _d158302Service.ScrollRemarksBackwardAsync(
+                input,
+                cancellationToken);
+
+        ApplyScreenToPage();
+
+        ModelState.Clear();
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F5 - REMARK SCROLL FORWARD
+    // ============================================================
+
+    public async Task<IActionResult> OnPostScrollRightAsync(
+        CancellationToken cancellationToken)
+    {
+        NormalizePostedValues();
+
+        EnsureSelections();
+
+        var input = BuildInput();
+
+        Screen =
+            await _d158302Service.ScrollRemarksForwardAsync(
+                input,
+                cancellationToken);
+
+        ApplyScreenToPage();
+
+        ModelState.Clear();
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F6 - RESET
+    // ============================================================
+
+    public async Task<IActionResult> OnPostResetAsync(
+        CancellationToken cancellationToken)
+    {
+        NormalizePostedValues();
+
+        EnsureSelections();
+
+        var input = BuildInput();
+
+        Screen =
+            await _d158302Service.ResetAsync(
+                input,
+                cancellationToken);
+
+        /*
+         * Legacy Screen 302 behavior:
+         * after F6, JOB NUMBER and FA become editable.
+         */
+        Screen.ScreenReset = true;
+        Screen.JobNumberEditable = true;
+        Screen.FunctionalAreaEditable = true;
+
+        ApplyScreenToPage();
+
+        Action = "";
+        LatestSelection = "";
+
+        Selections =
+            CreateBlankSelections();
+
+        ModelState.Clear();
+
+        return Page();
+    }
+
+
+    // ============================================================
+    // F7 - STATUS BACKWARD
     // ============================================================
 
     public async Task<IActionResult> OnPostBackwardAsync(
@@ -336,18 +246,25 @@ public sealed class D158302Model : PageModel
     {
         NormalizePostedValues();
 
-        await LoadScreenAsync(cancellationToken);
+        EnsureSelections();
+
+        var input = BuildInput();
+
+        Screen =
+            await _d158302Service.ScrollStatusBackwardAsync(
+                input,
+                cancellationToken);
 
         ApplyScreenToPage();
+
+        ModelState.Clear();
 
         return Page();
     }
 
 
     // ============================================================
-    // F8 FORWARD
-    //
-    // Main business COBOL required for exact browse ordering.
+    // F8 - STATUS FORWARD
     // ============================================================
 
     public async Task<IActionResult> OnPostForwardAsync(
@@ -355,16 +272,25 @@ public sealed class D158302Model : PageModel
     {
         NormalizePostedValues();
 
-        await LoadScreenAsync(cancellationToken);
+        EnsureSelections();
+
+        var input = BuildInput();
+
+        Screen =
+            await _d158302Service.ScrollStatusForwardAsync(
+                input,
+                cancellationToken);
 
         ApplyScreenToPage();
+
+        ModelState.Clear();
 
         return Page();
     }
 
 
     // ============================================================
-    // F12 MAIN
+    // F12 - MAIN MENU
     // ============================================================
 
     public IActionResult OnPostMainMenu()
@@ -374,355 +300,44 @@ public sealed class D158302Model : PageModel
 
 
     // ============================================================
-    // LOAD TRUSTED SCREEN DATA
-    //
-    // IMPORTANT:
-    //
-    // We are temporarily reusing ID158500Service here because it
-    // already loads:
-    //
-    //   - job
-    //   - functional-area descriptions
-    //   - status
-    //   - start date
-    //   - projected completion
-    //   - end date
-    //   - percentage
-    //   - latest remark
-    //
-    // That lets D158302 work immediately without inventing new SQL.
-    //
-    // Detailed five-row remark history requires the D158302
-    // business program / repository and is intentionally blank for now.
+    // BUILD APPLICATION INPUT
     // ============================================================
 
-    private async Task LoadScreenAsync(
-        CancellationToken cancellationToken)
+    private D158302Input BuildInput()
     {
-        EnsureSelections();
-
-        var source =
-            await _d158500Service.LoadAsync(
-                JobNumber,
-                cancellationToken);
-
-        var requestedFa =
-            Normalize(FunctionalArea);
-
-        var statusRow =
-            source.Rows.FirstOrDefault(
-                x => string.Equals(
-                    Normalize(x.FunctionalArea),
-                    requestedFa,
-                    StringComparison.OrdinalIgnoreCase));
-
-        Screen = new D158302Screen
+        return new D158302Input
         {
+            Action =
+                Normalize(Action),
+
             JobNumber =
-                Normalize(source.JobNumber),
+                Normalize(JobNumber),
 
             FunctionalArea =
-                requestedFa,
-
-            FunctionalAreaDescription =
-                Normalize(statusRow?.Description),
-
-            Status =
-                Normalize(statusRow?.Status),
-
-            Percent =
-                Normalize(statusRow?.Percent),
-
-            StartDate =
-                BlankZeroDate(
-                    statusRow?.StartDate),
-
-            ProjectedEndDate =
-                BlankZeroDate(
-                    statusRow?.ProjectedEndDate),
-
-            EndDate =
-                BlankZeroDate(
-                    statusRow?.EndDate),
-
-            /*
-             * D158500's status model currently does not expose
-             * functional-area last-updated or user-id.
-             *
-             * Do not fabricate them.
-             */
-            LastUpdated = "",
-            UserId = "",
+                Normalize(FunctionalArea),
 
             History =
-                History,
+                NormalizeHistory(History),
 
-            ErrorMessage =
-                Normalize(source.ErrorMessage),
-
-            Remarks =
-                CreateBlankRemarkRows(),
-
-            /*
-             * D158500 does expose the latest job remark.
-             *
-             * It does not currently expose the latest remark FA,
-             * user id, type or flags, so those remain blank.
-             */
-            LatestRemark =
-                Normalize(source.LatestRemark),
-
-            LatestRemarkLastUpdated =
-                Normalize(source.LastUpdated),
-
-            LatestRemarkFunctionalArea = "",
-            LatestRemarkUserId = "",
-            LatestRemarkType = "",
-            LatestRemarkStatusFlag = "",
-            LatestRemarkDeleteFlag = ""
-        };
-
-        Screen.LatestRemarkCanSelect =
-            !string.IsNullOrWhiteSpace(
-                Screen.LatestRemark);
-    }
-
-
-    // ============================================================
-    // APPLY TRUSTED SCREEN TO PAGE
-    // ============================================================
-
-    private void ApplyScreenToPage()
-    {
-        JobNumber =
-            Normalize(Screen.JobNumber);
-
-        FunctionalArea =
-            Normalize(Screen.FunctionalArea);
-
-        History =
-            string.IsNullOrWhiteSpace(Screen.History)
-                ? "N"
-                : Normalize(Screen.History);
-
-        Action = "";
-
-        LatestSelection = "";
-
-        Selections =
-            Enumerable.Repeat("", 5)
-                .ToList();
-    }
-
-
-    // ============================================================
-    // Preserve selection fields after a validation/business error
-    // ============================================================
-
-    private void PreservePostedSelections()
-    {
-        EnsureSelections();
-
-        JobNumber =
-            Normalize(Screen.JobNumber);
-
-        FunctionalArea =
-            Normalize(Screen.FunctionalArea);
-    }
-
-
-    // ============================================================
-    // Normalize values posted from browser
-    // ============================================================
-
-    private void NormalizePostedValues()
-    {
-        Action =
-            Normalize(Action);
-
-        JobNumber =
-            Normalize(JobNumber);
-
-        FunctionalArea =
-            Normalize(FunctionalArea);
-
-        History =
-            Normalize(History);
-
-        LatestSelection =
-            Normalize(LatestSelection);
-
-        EnsureSelections();
-
-        for (var i = 0;
-             i < Selections.Count;
-             i++)
-        {
-            Selections[i] =
-                Normalize(Selections[i]);
-        }
-    }
-
-
-    // ============================================================
-    // Ensure exactly five remark-selection values
-    // ============================================================
-
-    private void EnsureSelections()
-    {
-        Selections ??=
-            new List<string>();
-
-        while (Selections.Count < 5)
-        {
-            Selections.Add("");
-        }
-
-        if (Selections.Count > 5)
-        {
             Selections =
                 Selections
-                    .Take(5)
-                    .ToList();
-        }
+                    .Select(NormalizeSelection)
+                    .ToList(),
+
+            LatestSelection =
+                NormalizeSelection(LatestSelection),
+
+            ScreenReset =
+                Screen.ScreenReset,
+
+            TopRemarkKey =
+                Screen.TopRemarkKey,
+
+            BottomRemarkKey =
+                Screen.BottomRemarkKey
+        };
     }
 
 
     // ============================================================
-    // Create the five legacy remark work rows
-    // ============================================================
-
-    private static List<D158302RemarkRow>
-        CreateBlankRemarkRows()
-    {
-        return Enumerable
-            .Range(0, 5)
-            .Select(_ =>
-                new D158302RemarkRow())
-            .ToList();
-    }
-
-
-    // ============================================================
-    // Legacy screen should not display zero-filled dates.
-    // ============================================================
-
-    private static string BlankZeroDate(
-        string? value)
-    {
-        var text =
-            Normalize(value);
-
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return "";
-        }
-
-        var check =
-            text
-                .Replace("/", "")
-                .Replace("-", "")
-                .Replace(".", "");
-
-        if (check.Length > 0 &&
-            check.All(c => c == '0'))
-        {
-            return "";
-        }
-
-        return text;
-    }
-
-
-    // ============================================================
-    // Standard PCPM normalization
-    // ============================================================
-
-    private static string Normalize(
-        string? value)
-    {
-        return (value ?? "")
-            .Trim()
-            .ToUpperInvariant();
-    }
-}
-
-
-// ==================================================================
-// D158302 DISPLAY MODEL
-// ==================================================================
-
-public sealed class D158302Screen
-{
-    public string JobNumber { get; set; } = "";
-
-    public string FunctionalArea { get; set; } = "";
-
-    public string FunctionalAreaDescription { get; set; } = "";
-
-    public string Status { get; set; } = "";
-
-    public string Percent { get; set; } = "";
-
-    public string StartDate { get; set; } = "";
-
-    public string ProjectedEndDate { get; set; } = "";
-
-    public string EndDate { get; set; } = "";
-
-    public string LastUpdated { get; set; } = "";
-
-    public string UserId { get; set; } = "";
-
-    public string History { get; set; } = "N";
-
-    public List<D158302RemarkRow> Remarks { get; set; } =
-        new();
-
-    public string LatestRemarkFunctionalArea { get; set; } = "";
-
-    public string LatestRemarkUserId { get; set; } = "";
-
-    public string LatestRemark { get; set; } = "";
-
-    public string LatestRemarkLastUpdated { get; set; } = "";
-
-    public string LatestRemarkType { get; set; } = "";
-
-    public string LatestRemarkStatusFlag { get; set; } = "";
-
-    public string LatestRemarkDeleteFlag { get; set; } = "";
-
-    public bool LatestRemarkCanSelect { get; set; }
-
-    public string ErrorMessage { get; set; } = "";
-}
-
-
-// ==================================================================
-// D158302 REMARK ROW
-// ==================================================================
-
-public sealed class D158302RemarkRow
-{
-    public string Remark { get; set; } = "";
-
-    public string LastUpdated { get; set; } = "";
-
-    public string RemarkType { get; set; } = "";
-
-    public string StatusFlag { get; set; } = "";
-
-    public string DeleteFlag { get; set; } = "";
-
-    /*
-     * Legacy SELECT-R starts as PSI:
-     *
-     * P = protected
-     * I = invisible
-     *
-     * The business program dynamically changes it when selection
-     * is appropriate.
-     */
-    public bool CanSelect { get; set; }
-}
+    // APPLY APPLICATION
