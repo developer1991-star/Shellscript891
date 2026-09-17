@@ -1,1242 +1,259 @@
-namespace PCPM.Application.D158302;
+using System.Data;
+using System.Globalization;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using PCPM.Application.D158302;
 
-public interface ID158302Repository
+namespace PCPM.Infrastructure.D158302;
+
+public sealed class D158302Repository : ID158302Repository
 {
-    Task<D158302StatusRecord?> FindStatusAsync(
-        string jobNumber,
-        string functionalArea,
-        CancellationToken cancellationToken = default);
+    private readonly string _connectionString;
 
-    Task<D158302StatusRecord?> FindNextStatusAsync(
-        string jobNumber,
-        string functionalArea,
-        CancellationToken cancellationToken = default);
-
-    Task<D158302StatusRecord?> FindPreviousStatusAsync(
-        string jobNumber,
-        string functionalArea,
-        CancellationToken cancellationToken = default);
-
-    Task<string?> GetFunctionalAreaDescriptionAsync(
-        string functionalArea,
-        CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<D158302RemarkRecord>> GetRemarksForwardAsync(
-        string jobNumber,
-        string functionalArea,
-        string history,
-        D158302RemarkKey? bottomKey,
-        int count,
-        CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<D158302RemarkRecord>> GetRemarksBackwardAsync(
-        string jobNumber,
-        string functionalArea,
-        string history,
-        D158302RemarkKey topKey,
-        int count,
-        CancellationToken cancellationToken = default);
-
-    Task<D158302RemarkRecord?> GetLatestJobRemarkAsync(
-        string jobNumber,
-        CancellationToken cancellationToken = default);
-
-    Task<string?> GetMessageAsync(
-        string messageId,
-        CancellationToken cancellationToken = default);
-}
-
-
-
-
-
-
-
----------------
-
-
-
-
-namespace PCPM.Application.D158302;
-
-public sealed class D158302StatusRecord
-{
-    public string JobNumber { get; set; } = "";
-    public string FunctionalArea { get; set; } = "";
-
-    public string FunctionalAreaStatus { get; set; } = "";
-    public string PercentComplete { get; set; } = "";
-
-    // Legacy database format: YYYYMM
-    public string StartDate { get; set; } = "";
-    public string ProjectedEndDate { get; set; } = "";
-    public string EndDate { get; set; } = "";
-
-    // Legacy database format: YYYYMMDD
-    public string LastUpdated { get; set; } = "";
-
-    public string UserId { get; set; } = "";
-}
-
-public sealed class D158302RemarkRecord
-{
-    public string JobNumber { get; set; } = "";
-    public string FunctionalArea { get; set; } = "";
-
-    public string Remark { get; set; } = "";
-
-    // YYYYMMDD
-    public string LastUpdated { get; set; } = "";
-
-    public int RemarkType { get; set; }
-    public int RemarkSequence { get; set; }
-
-    public string StatusFlag { get; set; } = "";
-    public string DeleteFlag { get; set; } = "";
-
-    public string HistoryFlag { get; set; } = "";
-
-    public string UserId { get; set; } = "";
-}
-
-public sealed class D158302RemarkKey
-{
-    public string LastUpdated { get; set; } = "";
-    public int RemarkType { get; set; }
-    public int RemarkSequence { get; set; }
-}
-
-
-
-
------------
-
-
-
-
-namespace PCPM.Application.D158302;
-
-public sealed class D158302Screen
-{
-    public string JobNumber { get; set; } = "";
-    public string FunctionalArea { get; set; } = "";
-    public string FunctionalAreaDescription { get; set; } = "";
-
-    public string FunctionalAreaStatus { get; set; } = "";
-    public string PercentComplete { get; set; } = "";
-
-    public string StartDate { get; set; } = "";
-    public string ProjectedEndDate { get; set; } = "";
-    public string EndDate { get; set; } = "";
-
-    public string LastUpdated { get; set; } = "";
-    public string UserId { get; set; } = "";
-
-    public string History { get; set; } = "N";
-    public string HistoryHold { get; set; } = "N";
-
-    public bool ScreenReset { get; set; }
-
-    public bool JobNumberEditable { get; set; }
-    public bool FunctionalAreaEditable { get; set; }
-
-    public List<D158302RemarkRow> Remarks { get; set; } = new();
-
-    public D158302RemarkKey? TopRemarkKey { get; set; }
-    public D158302RemarkKey? BottomRemarkKey { get; set; }
-
-    public string LatestRemarkFunctionalArea { get; set; } = "";
-    public string LatestRemarkUserId { get; set; } = "";
-    public string LatestRemark { get; set; } = "";
-    public string LatestRemarkLastUpdated { get; set; } = "";
-    public string LatestRemarkType { get; set; } = "";
-    public string LatestRemarkStatusFlag { get; set; } = "";
-    public string LatestRemarkDeleteFlag { get; set; } = "";
-
-    public bool LatestRemarkCanSelect { get; set; }
-
-    public string MessageId { get; set; } = "";
-    public string ErrorMessage { get; set; } = "";
-}
-
-public sealed class D158302RemarkRow
-{
-    public string Selection { get; set; } = "";
-
-    public string Remark { get; set; } = "";
-    public string LastUpdated { get; set; } = "";
-    public string RemarkType { get; set; } = "";
-
-    public int RemarkSequence { get; set; }
-
-    public string StatusFlag { get; set; } = "";
-    public string DeleteFlag { get; set; } = "";
-
-    public bool CanSelect { get; set; }
-}
-
-
-
-------
-
-
-
-
-namespace PCPM.Application.D158302;
-
-public sealed class D158302Input
-{
-    public string Action { get; set; } = "";
-
-    public string JobNumber { get; set; } = "";
-    public string FunctionalArea { get; set; } = "";
-
-    // What was loaded before the POST.
-    public string OriginalJobNumber { get; set; } = "";
-    public string OriginalFunctionalArea { get; set; } = "";
-
-    public string History { get; set; } = "N";
-    public string HistoryHold { get; set; } = "N";
-
-    public bool ScreenReset { get; set; }
-
-    public List<D158302RemarkRowInput> Remarks { get; set; } = new();
-
-    public string LatestSelection { get; set; } = "";
-}
-
-public sealed class D158302RemarkRowInput
-{
-    public string Selection { get; set; } = "";
-
-    public string LastUpdated { get; set; } = "";
-    public int RemarkType { get; set; }
-    public int RemarkSequence { get; set; }
-}
-
-public sealed class D158302Result
-{
-    public D158302Screen? Screen { get; set; }
-
-    // Exact legacy W-NEXT value:
-    // 302, 550, E56, E57, E58, 000, etc.
-    public string DestinationCode { get; set; } = "";
-
-    public string JobNumber { get; set; } = "";
-    public string FunctionalArea { get; set; } = "";
-
-    public string HistoryFlag { get; set; } = "";
-    public int? RemarkType { get; set; }
-    public int? RemarkSequence { get; set; }
-
-    public bool Navigate =>
-        !string.IsNullOrWhiteSpace(DestinationCode);
-}
-
-
-
--------
-
-
-
-namespace PCPM.Application.D158302;
-
-public interface ID158302Service
-{
-    Task<D158302Screen> LoadAsync(
-        string jobNumber,
-        string functionalArea,
-        string history = "N",
-        CancellationToken cancellationToken = default);
-
-    D158302Screen Reset();
-
-    Task<D158302Screen> ScrollStatusForwardAsync(
-        string jobNumber,
-        string functionalArea,
-        string history,
-        CancellationToken cancellationToken = default);
-
-    Task<D158302Screen> ScrollStatusBackwardAsync(
-        string jobNumber,
-        string functionalArea,
-        string history,
-        CancellationToken cancellationToken = default);
-
-    Task<D158302Screen> ScrollRemarksForwardAsync(
-        D158302Screen current,
-        CancellationToken cancellationToken = default);
-
-    Task<D158302Screen> ScrollRemarksBackwardAsync(
-        D158302Screen current,
-        CancellationToken cancellationToken = default);
-
-    Task<D158302Result> ProcessEnterAsync(
-        D158302Input input,
-        CancellationToken cancellationToken = default);
-}
-
-
-
------------
-
-
-
-namespace PCPM.Application.D158302;
-
-public sealed class D158302Service : ID158302Service
-{
-    private readonly ID158302Repository _repository;
-
-    public D158302Service(ID158302Repository repository)
+    public D158302Repository(IConfiguration configuration)
     {
-        _repository = repository;
+        _connectionString =
+            configuration.GetConnectionString("PCPM")
+            ?? throw new InvalidOperationException(
+                "Connection string 'PCPM' was not found.");
     }
 
-    public async Task<D158302Screen> LoadAsync(
+    // ============================================================
+    // STATUS
+    // Legacy: LOAD-STATUS-REC
+    //
+    // STATUS_R = '01'
+    // DELFLAG = blank
+    // FUNC_AREA = requested FA
+    // JOBNO >= requested job
+    // ============================================================
+
+    public async Task<D158302StatusRecord?> FindStatusAsync(
         string jobNumber,
         string functionalArea,
-        string history = "N",
         CancellationToken cancellationToken = default)
     {
-        jobNumber = Normalize(jobNumber);
-        functionalArea = Normalize(functionalArea);
-        history = Normalize(history);
+        const string sql = """
+            SELECT TOP (1)
+                JOBNO,
+                FUNC_AREA,
+                FA_STATUS,
+                FA_PERCENT,
+                FA_START_DATE,
+                FA_PROJ_END,
+                FA_END,
+                LAST_UPDATED,
+                USERID_R
+            FROM [PRECONSTRUCTION].[dbo].[T158_PRECON_STATUS]
+            WHERE LTRIM(RTRIM(STATUS_R)) = '01'
+              AND ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
+              AND LTRIM(RTRIM(FUNC_AREA)) =
+                  LTRIM(RTRIM(@FunctionalArea))
+              AND LTRIM(RTRIM(JOBNO)) >=
+                  LTRIM(RTRIM(@JobNumber))
+            ORDER BY
+                LTRIM(RTRIM(JOBNO)) ASC,
+                LTRIM(RTRIM(FUNC_AREA)) ASC;
+            """;
 
-        var screen = new D158302Screen
-        {
-            JobNumber = jobNumber,
-            FunctionalArea = functionalArea,
-            History = string.IsNullOrWhiteSpace(history) ? "N" : history,
-            HistoryHold = string.IsNullOrWhiteSpace(history) ? "N" : history,
-            ScreenReset = false,
-            JobNumberEditable = false,
-            FunctionalAreaEditable = false
-        };
+        await using var connection =
+            new SqlConnection(_connectionString);
 
-        if (!IsValidHistory(screen.History))
-        {
-            await SetMessageAsync(screen, "E00055", cancellationToken);
-            return screen;
-        }
+        await connection.OpenAsync(cancellationToken);
 
-        var status = await _repository.FindStatusAsync(
-            jobNumber,
-            functionalArea,
-            cancellationToken);
+        await using var command =
+            new SqlCommand(sql, connection);
 
-        if (status is null)
-        {
-            await SetMessageAsync(screen, "E00042", cancellationToken);
-            return screen;
-        }
+        AddJobNumberParameter(command, jobNumber);
+        AddFunctionalAreaParameter(command, functionalArea);
 
-        var originallyRequestedJob = jobNumber;
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
 
-        await ApplyStatusAsync(
-            screen,
-            status,
-            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            return null;
 
-        if (!string.IsNullOrWhiteSpace(originallyRequestedJob) &&
-            string.Compare(
-                screen.JobNumber,
-                originallyRequestedJob,
-                StringComparison.Ordinal) > 0)
-        {
-            await SetMessageAsync(screen, "W00003", cancellationToken);
-        }
-
-        // LOAD-LAST-RMK is job-wide, not FA-specific.
-        await LoadLatestRemarkAsync(
-            screen,
-            cancellationToken);
-
-        await LoadInitialRemarksAsync(
-            screen,
-            cancellationToken);
-
-        return screen;
+        return MapStatus(reader);
     }
 
-    public D158302Screen Reset()
-    {
-        // Legacy PF6 performs REFRESH, which puts the screen back
-        // to initial values, then temporarily enables JOBNO and FA.
+    // ============================================================
+    // F8 STATUS FORWARD
+    // Legacy: STAT-SCROLL-FWD
+    // ============================================================
 
-        return new D158302Screen
-        {
-            History = "N",
-            HistoryHold = "N",
-
-            ScreenReset = true,
-
-            JobNumberEditable = true,
-            FunctionalAreaEditable = true,
-
-            Remarks = CreateBlankRows()
-        };
-    }
-
-    public async Task<D158302Screen> ScrollStatusForwardAsync(
+    public async Task<D158302StatusRecord?> FindNextStatusAsync(
         string jobNumber,
         string functionalArea,
-        string history,
         CancellationToken cancellationToken = default)
     {
-        jobNumber = Normalize(jobNumber);
-        functionalArea = Normalize(functionalArea);
-        history = Normalize(history);
+        const string sql = """
+            SELECT TOP (1)
+                JOBNO,
+                FUNC_AREA,
+                FA_STATUS,
+                FA_PERCENT,
+                FA_START_DATE,
+                FA_PROJ_END,
+                FA_END,
+                LAST_UPDATED,
+                USERID_R
+            FROM [PRECONSTRUCTION].[dbo].[T158_PRECON_STATUS]
+            WHERE LTRIM(RTRIM(STATUS_R)) = '01'
+              AND ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
+              AND LTRIM(RTRIM(FUNC_AREA)) =
+                  LTRIM(RTRIM(@FunctionalArea))
+              AND LTRIM(RTRIM(JOBNO)) >
+                  LTRIM(RTRIM(@JobNumber))
+            ORDER BY
+                LTRIM(RTRIM(JOBNO)) ASC,
+                LTRIM(RTRIM(FUNC_AREA)) ASC;
+            """;
 
-        var status =
-            await _repository.FindNextStatusAsync(
-                jobNumber,
-                functionalArea,
-                cancellationToken);
+        await using var connection =
+            new SqlConnection(_connectionString);
 
-        if (status is null)
-        {
-            var current = await LoadAsync(
-                jobNumber,
-                functionalArea,
-                history,
-                cancellationToken);
+        await connection.OpenAsync(cancellationToken);
 
-            await SetMessageAsync(
-                current,
-                "U00007",
-                cancellationToken);
+        await using var command =
+            new SqlCommand(sql, connection);
 
-            return current;
-        }
+        AddJobNumberParameter(command, jobNumber);
+        AddFunctionalAreaParameter(command, functionalArea);
 
-        return await BuildScreenFromStatusAsync(
-            status,
-            history,
-            cancellationToken);
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+            return null;
+
+        return MapStatus(reader);
     }
 
-    public async Task<D158302Screen> ScrollStatusBackwardAsync(
+    // ============================================================
+    // F7 STATUS BACKWARD
+    // Legacy: STAT-SCROLL-BWD
+    // ============================================================
+
+    public async Task<D158302StatusRecord?> FindPreviousStatusAsync(
         string jobNumber,
         string functionalArea,
-        string history,
         CancellationToken cancellationToken = default)
     {
-        jobNumber = Normalize(jobNumber);
-        functionalArea = Normalize(functionalArea);
-        history = Normalize(history);
+        const string sql = """
+            SELECT TOP (1)
+                JOBNO,
+                FUNC_AREA,
+                FA_STATUS,
+                FA_PERCENT,
+                FA_START_DATE,
+                FA_PROJ_END,
+                FA_END,
+                LAST_UPDATED,
+                USERID_R
+            FROM [PRECONSTRUCTION].[dbo].[T158_PRECON_STATUS]
+            WHERE LTRIM(RTRIM(STATUS_R)) = '01'
+              AND ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
+              AND LTRIM(RTRIM(FUNC_AREA)) =
+                  LTRIM(RTRIM(@FunctionalArea))
+              AND LTRIM(RTRIM(JOBNO)) <
+                  LTRIM(RTRIM(@JobNumber))
+            ORDER BY
+                LTRIM(RTRIM(JOBNO)) DESC,
+                LTRIM(RTRIM(FUNC_AREA)) DESC;
+            """;
 
-        var status =
-            await _repository.FindPreviousStatusAsync(
-                jobNumber,
-                functionalArea,
-                cancellationToken);
+        await using var connection =
+            new SqlConnection(_connectionString);
 
-        if (status is null)
-        {
-            var current = await LoadAsync(
-                jobNumber,
-                functionalArea,
-                history,
-                cancellationToken);
+        await connection.OpenAsync(cancellationToken);
 
-            await SetMessageAsync(
-                current,
-                "U00006",
-                cancellationToken);
+        await using var command =
+            new SqlCommand(sql, connection);
 
-            return current;
-        }
+        AddJobNumberParameter(command, jobNumber);
+        AddFunctionalAreaParameter(command, functionalArea);
 
-        return await BuildScreenFromStatusAsync(
-            status,
-            history,
-            cancellationToken);
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+            return null;
+
+        return MapStatus(reader);
     }
 
-    public async Task<D158302Screen> ScrollRemarksForwardAsync(
-        D158302Screen current,
+    // ============================================================
+    // FUNCTIONAL AREA DESCRIPTION
+    // Legacy: V158-FAR104R0 / T158_FUNC_AREA
+    // ============================================================
+
+    public async Task<string?> GetFunctionalAreaDescriptionAsync(
+        string functionalArea,
         CancellationToken cancellationToken = default)
     {
-        var screen = CopyStatusArea(current);
+        const string sql = """
+            SELECT TOP (1)
+                FUNC_AREA_DESC
+            FROM [PRECONSTRUCTION].[dbo].[T158_FUNC_AREA]
+            WHERE LTRIM(RTRIM(FUNC_AREA)) =
+                  LTRIM(RTRIM(@FunctionalArea))
+            ORDER BY LTRIM(RTRIM(FUNC_AREA)) ASC;
+            """;
 
-        var records =
-            await _repository.GetRemarksForwardAsync(
-                current.JobNumber,
-                current.FunctionalArea,
-                current.History,
-                current.BottomRemarkKey,
-                5,
-                cancellationToken);
+        await using var connection =
+            new SqlConnection(_connectionString);
 
-        ApplyRemarkRows(screen, records);
+        await connection.OpenAsync(cancellationToken);
 
-        // Legacy PF4/PF5 keep the latest-remark area.
-        CopyLatestRemark(current, screen);
+        await using var command =
+            new SqlCommand(sql, connection);
 
-        if (records.Count == 0)
-        {
-            await SetMessageAsync(
-                screen,
-                current.History == "N"
-                    ? "U00018"
-                    : "U00019",
-                cancellationToken);
+        AddFunctionalAreaParameter(command, functionalArea);
 
-            return screen;
-        }
+        var result =
+            await command.ExecuteScalarAsync(cancellationToken);
 
-        if (records.Count < 5)
-        {
-            await SetMessageAsync(
-                screen,
-                "U00013",
-                cancellationToken);
-        }
+        if (result is null || result == DBNull.Value)
+            return null;
 
-        return screen;
+        return result.ToString()?.Trim();
     }
 
-    public async Task<D158302Screen> ScrollRemarksBackwardAsync(
-        D158302Screen current,
-        CancellationToken cancellationToken = default)
+    // ============================================================
+    // REMARK SCROLL FORWARD
+    //
+    // This method also handles the INITIAL load.
+    //
+    // bottomKey == null:
+    //     newest remarks first
+    //
+    // bottomKey != null:
+    //     records older than the current bottom record
+    //
+    // Legacy screen order:
+    // LAST_UPDATED DESC
+    // REMTYPE DESC
+    // REMSEQ DESC
+    // ============================================================
+
+    public async Task<IReadOnlyList<D158302RemarkRecord>>
+        GetRemarksForwardAsync(
+            string jobNumber,
+            string functionalArea,
+            string history,
+            D158302RemarkKey? bottomKey,
+            int count,
+            CancellationToken cancellationToken = default)
     {
-        var screen = CopyStatusArea(current);
-
-        if (current.TopRemarkKey is null)
-        {
-            return current;
-        }
-
-        var records =
-            await _repository.GetRemarksBackwardAsync(
-                current.JobNumber,
-                current.FunctionalArea,
-                current.History,
-                current.TopRemarkKey,
-                5,
-                cancellationToken);
-
-        /*
-         * SQL comes back ascending in the legacy program, while the
-         * screen itself is displayed newest -> oldest.
-         */
-        var displayRecords =
-            records
-                .OrderByDescending(x => x.LastUpdated)
-                .ThenByDescending(x => x.RemarkType)
-                .ThenByDescending(x => x.RemarkSequence)
-                .ToList();
-
-        ApplyRemarkRows(
-            screen,
-            displayRecords);
-
-        CopyLatestRemark(
-            current,
-            screen);
-
-        if (records.Count == 0)
-        {
-            await SetMessageAsync(
-                screen,
-                current.History == "N"
-                    ? "U00018"
-                    : "U00019",
-                cancellationToken);
-
-            return screen;
-        }
-
-        if (records.Count < 5)
-        {
-            await SetMessageAsync(
-                screen,
-                "U00012",
-                cancellationToken);
-        }
-
-        return screen;
-    }
-
-    public async Task<D158302Result> ProcessEnterAsync(
-        D158302Input input,
-        CancellationToken cancellationToken = default)
-    {
-        NormalizeInput(input);
-
-        var selectedRows = input.Remarks
-            .Where(x => !string.IsNullOrWhiteSpace(x.Selection))
-            .ToList();
-
-        var latestSelected =
-            !string.IsNullOrWhiteSpace(input.LatestSelection);
-
-        var numberSelected =
-            selectedRows.Count +
-            (latestSelected ? 1 : 0);
-
-        var actionKeyed =
-            !string.IsNullOrWhiteSpace(input.Action);
-
-        var recordSelected =
-            numberSelected > 0;
-
-        var historyChanged =
-            !string.Equals(
-                input.History,
-                input.HistoryHold,
-                StringComparison.OrdinalIgnoreCase);
-
-        // CHECK-CONFLICT
-        if (numberSelected > 1 ||
-            (actionKeyed && recordSelected) ||
-            (actionKeyed && historyChanged) ||
-            (recordSelected && historyChanged))
-        {
-            var conflict = await LoadAsync(
-                input.OriginalJobNumber,
-                input.OriginalFunctionalArea,
-                input.HistoryHold,
-                cancellationToken);
-
-            await SetMessageAsync(
-                conflict,
-                "E00016",
-                cancellationToken);
-
-            return new D158302Result
-            {
-                Screen = conflict
-            };
-        }
-
-        var newJobNumber =
-            !string.IsNullOrWhiteSpace(input.JobNumber) &&
-            !string.Equals(
-                input.JobNumber,
-                input.OriginalJobNumber,
-                StringComparison.OrdinalIgnoreCase);
-
-        var newFunctionalArea =
-            !string.IsNullOrWhiteSpace(input.FunctionalArea) &&
-            !string.Equals(
-                input.FunctionalArea,
-                input.OriginalFunctionalArea,
-                StringComparison.OrdinalIgnoreCase);
-
-        // HISTORY changed by itself: reload remark portion.
-        if (historyChanged)
-        {
-            var screen = await LoadAsync(
-                input.OriginalJobNumber,
-                input.OriginalFunctionalArea,
-                input.History,
-                cancellationToken);
-
-            screen.ScreenReset = false;
-
-            return new D158302Result
-            {
-                Screen = screen
-            };
-        }
-
-        if (actionKeyed)
-        {
-            if (!IsValidAction(input.Action))
-            {
-                var screen = await LoadAsync(
-                    input.OriginalJobNumber,
-                    input.OriginalFunctionalArea,
-                    input.History,
-                    cancellationToken);
-
-                await SetMessageAsync(
-                    screen,
-                    "E00002",
-                    cancellationToken);
-
-                return new D158302Result
-                {
-                    Screen = screen
-                };
-            }
-
-            return new D158302Result
-            {
-                DestinationCode = input.Action,
-
-                JobNumber = input.ScreenReset && !newJobNumber
-                    ? input.OriginalJobNumber
-                    : input.JobNumber,
-
-                FunctionalArea = input.ScreenReset && !newFunctionalArea
-                    ? input.OriginalFunctionalArea
-                    : input.FunctionalArea
-            };
-        }
-
-        if (recordSelected)
-        {
-            if (latestSelected)
-            {
-                if (input.LatestSelection == "S")
-                {
-                    return new D158302Result
-                    {
-                        DestinationCode = "550",
-                        JobNumber = input.OriginalJobNumber,
-                        FunctionalArea = input.OriginalFunctionalArea
-                    };
-                }
-
-                var screen = await LoadAsync(
-                    input.OriginalJobNumber,
-                    input.OriginalFunctionalArea,
-                    input.History,
-                    cancellationToken);
-
-                await SetMessageAsync(
-                    screen,
-                    "E00012",
-                    cancellationToken);
-
-                return new D158302Result
-                {
-                    Screen = screen
-                };
-            }
-
-            var selected = selectedRows.Single();
-
-            string destination;
-
-            switch (selected.Selection)
-            {
-                case "A":
-                    destination = "E56";
-                    break;
-
-                case "U":
-                    if (string.IsNullOrWhiteSpace(selected.LastUpdated))
-                    {
-                        return await SelectionErrorAsync(
-                            input,
-                            "E00132",
-                            cancellationToken);
-                    }
-
-                    destination = "E57";
-                    break;
-
-                case "D":
-                    if (string.IsNullOrWhiteSpace(selected.LastUpdated))
-                    {
-                        return await SelectionErrorAsync(
-                            input,
-                            "E00132",
-                            cancellationToken);
-                    }
-
-                    destination = "E58";
-                    break;
-
-                default:
-                    return await SelectionErrorAsync(
-                        input,
-                        "E00012",
-                        cancellationToken);
-            }
-
-            return new D158302Result
-            {
-                DestinationCode = destination,
-
-                JobNumber = input.OriginalJobNumber,
-                FunctionalArea = input.OriginalFunctionalArea,
-
-                HistoryFlag = input.History,
-                RemarkType = selected.RemarkType,
-                RemarkSequence = selected.RemarkSequence
-            };
-        }
-
-        if (newJobNumber || newFunctionalArea)
-        {
-            return new D158302Result
-            {
-                DestinationCode = "302",
-
-                JobNumber = newJobNumber
-                    ? input.JobNumber
-                    : input.OriginalJobNumber,
-
-                FunctionalArea = newFunctionalArea
-                    ? input.FunctionalArea
-                    : input.OriginalFunctionalArea
-            };
-        }
-
-        if (string.IsNullOrWhiteSpace(input.JobNumber) ||
-            string.IsNullOrWhiteSpace(input.FunctionalArea))
-        {
-            return new D158302Result
-            {
-                DestinationCode = "302",
-                JobNumber = input.JobNumber,
-                FunctionalArea = input.FunctionalArea
-            };
-        }
-
-        var noSelection = await LoadAsync(
-            input.OriginalJobNumber,
-            input.OriginalFunctionalArea,
-            input.History,
-            cancellationToken);
-
-        await SetMessageAsync(
-            noSelection,
-            "E00004",
-            cancellationToken);
-
-        return new D158302Result
-        {
-            Screen = noSelection
-        };
-    }
-
-    private async Task<D158302Result> SelectionErrorAsync(
-        D158302Input input,
-        string messageId,
-        CancellationToken cancellationToken)
-    {
-        var screen = await LoadAsync(
-            input.OriginalJobNumber,
-            input.OriginalFunctionalArea,
-            input.History,
-            cancellationToken);
-
-        await SetMessageAsync(
-            screen,
-            messageId,
-            cancellationToken);
-
-        return new D158302Result
-        {
-            Screen = screen
-        };
-    }
-
-    private async Task<D158302Screen> BuildScreenFromStatusAsync(
-        D158302StatusRecord status,
-        string history,
-        CancellationToken cancellationToken)
-    {
-        var screen = new D158302Screen
-        {
-            History = history,
-            HistoryHold = history
-        };
-
-        await ApplyStatusAsync(
-            screen,
-            status,
-            cancellationToken);
-
-        await LoadLatestRemarkAsync(
-            screen,
-            cancellationToken);
-
-        await LoadInitialRemarksAsync(
-            screen,
-            cancellationToken);
-
-        return screen;
-    }
-
-    private async Task ApplyStatusAsync(
-        D158302Screen screen,
-        D158302StatusRecord status,
-        CancellationToken cancellationToken)
-    {
-        screen.JobNumber =
-            Normalize(status.JobNumber);
-
-        screen.FunctionalArea =
-            Normalize(status.FunctionalArea);
-
-        screen.FunctionalAreaStatus =
-            Normalize(status.FunctionalAreaStatus);
-
-        screen.PercentComplete =
-            Normalize(status.PercentComplete);
-
-        screen.StartDate =
-            FormatYearMonth(status.StartDate);
-
-        screen.ProjectedEndDate =
-            FormatYearMonth(status.ProjectedEndDate);
-
-        screen.EndDate =
-            FormatYearMonth(status.EndDate);
-
-        screen.LastUpdated =
-            FormatYearMonthDay(status.LastUpdated);
-
-        screen.UserId =
-            Normalize(status.UserId);
-
-        var description =
-            await _repository.GetFunctionalAreaDescriptionAsync(
-                screen.FunctionalArea,
-                cancellationToken);
-
-        if (string.IsNullOrWhiteSpace(description))
-        {
-            screen.FunctionalAreaDescription = "UNDEFINED";
-
-            await SetMessageAsync(
-                screen,
-                "E00043",
-                cancellationToken);
-        }
-        else
-        {
-            screen.FunctionalAreaDescription =
-                description.Trim();
-        }
-    }
-
-    private async Task LoadInitialRemarksAsync(
-        D158302Screen screen,
-        CancellationToken cancellationToken)
-    {
-        var records =
-            await _repository.GetRemarksForwardAsync(
-                screen.JobNumber,
-                screen.FunctionalArea,
-                screen.History,
-                null,
-                5,
-                cancellationToken);
-
-        ApplyRemarkRows(
-            screen,
-            records);
-
-        if (records.Count == 0)
-        {
-            await SetMessageAsync(
-                screen,
-                screen.History == "N"
-                    ? "U00018"
-                    : "U00019",
-                cancellationToken);
-
-            return;
-        }
-
-        if (records.Count < 5)
-        {
-            await SetMessageAsync(
-                screen,
-                "U00013",
-                cancellationToken);
-        }
-    }
-
-    private async Task LoadLatestRemarkAsync(
-        D158302Screen screen,
-        CancellationToken cancellationToken)
-    {
-        var record =
-            await _repository.GetLatestJobRemarkAsync(
-                screen.JobNumber,
-                cancellationToken);
-
-        if (record is null)
-            return;
-
-        screen.LatestRemarkFunctionalArea =
-            Normalize(record.FunctionalArea);
-
-        screen.LatestRemarkUserId =
-            Normalize(record.UserId);
-
-        screen.LatestRemark =
-            record.Remark?.TrimEnd() ?? "";
-
-        screen.LatestRemarkLastUpdated =
-            FormatYearMonthDay(record.LastUpdated);
-
-        screen.LatestRemarkType =
-            record.RemarkType.ToString();
-
-        screen.LatestRemarkStatusFlag =
-            Normalize(record.StatusFlag);
-
-        screen.LatestRemarkDeleteFlag =
-            Normalize(record.DeleteFlag);
-
-        // Legacy UNPROTECT-SEL checks LR-USERID.
-        screen.LatestRemarkCanSelect =
-            !string.IsNullOrWhiteSpace(
-                screen.LatestRemarkUserId);
-    }
-
-    private static void ApplyRemarkRows(
-        D158302Screen screen,
-        IReadOnlyList<D158302RemarkRecord> records)
-    {
-        screen.Remarks = CreateBlankRows();
-
-        for (var i = 0;
-             i < records.Count && i < 5;
-             i++)
-        {
-            var record = records[i];
-
-            screen.Remarks[i] = new D158302RemarkRow
-            {
-                Remark =
-                    record.Remark?.TrimEnd() ?? "",
-
-                LastUpdated =
-                    FormatYearMonthDay(
-                        record.LastUpdated),
-
-                RemarkType =
-                    record.RemarkType.ToString(),
-
-                RemarkSequence =
-                    record.RemarkSequence,
-
-                StatusFlag =
-                    Normalize(record.StatusFlag),
-
-                DeleteFlag =
-                    Normalize(record.DeleteFlag),
-
-                CanSelect = true
-            };
-        }
-
-        /*
-         * UNPROTECT-SEL also enables row 1 even when no remark exists.
-         * This is what allows an "A" selection on an empty work row.
-         */
-        if (screen.Remarks.Count > 0 &&
-            string.IsNullOrWhiteSpace(
-                screen.Remarks[0].LastUpdated))
-        {
-            screen.Remarks[0].CanSelect = true;
-        }
-
-        if (records.Count > 0)
-        {
-            var first = records[0];
-            var last = records[^1];
-
-            screen.TopRemarkKey = new D158302RemarkKey
-            {
-                LastUpdated = first.LastUpdated,
-                RemarkType = first.RemarkType,
-                RemarkSequence = first.RemarkSequence
-            };
-
-            screen.BottomRemarkKey = new D158302RemarkKey
-            {
-                LastUpdated = last.LastUpdated,
-                RemarkType = last.RemarkType,
-                RemarkSequence = last.RemarkSequence
-            };
-        }
-    }
-
-    private static D158302Screen CopyStatusArea(
-        D158302Screen source)
-    {
-        return new D158302Screen
-        {
-            JobNumber = source.JobNumber,
-            FunctionalArea = source.FunctionalArea,
-            FunctionalAreaDescription =
-                source.FunctionalAreaDescription,
-
-            FunctionalAreaStatus =
-                source.FunctionalAreaStatus,
-
-            PercentComplete =
-                source.PercentComplete,
-
-            StartDate = source.StartDate,
-            ProjectedEndDate =
-                source.ProjectedEndDate,
-            EndDate = source.EndDate,
-
-            LastUpdated = source.LastUpdated,
-            UserId = source.UserId,
-
-            History = source.History,
-            HistoryHold = source.HistoryHold,
-
-            ScreenReset = source.ScreenReset,
-            JobNumberEditable =
-                source.JobNumberEditable,
-
-            FunctionalAreaEditable =
-                source.FunctionalAreaEditable
-        };
-    }
-
-    private static void CopyLatestRemark(
-        D158302Screen from,
-        D158302Screen to)
-    {
-        to.LatestRemarkFunctionalArea =
-            from.LatestRemarkFunctionalArea;
-
-        to.LatestRemarkUserId =
-            from.LatestRemarkUserId;
-
-        to.LatestRemark =
-            from.LatestRemark;
-
-        to.LatestRemarkLastUpdated =
-            from.LatestRemarkLastUpdated;
-
-        to.LatestRemarkType =
-            from.LatestRemarkType;
-
-        to.LatestRemarkStatusFlag =
-            from.LatestRemarkStatusFlag;
-
-        to.LatestRemarkDeleteFlag =
-            from.LatestRemarkDeleteFlag;
-
-        to.LatestRemarkCanSelect =
-            from.LatestRemarkCanSelect;
-    }
-
-    private async Task SetMessageAsync(
-        D158302Screen screen,
-        string messageId,
-        CancellationToken cancellationToken)
-    {
-        screen.MessageId = messageId;
-
-        var text =
-            await _repository.GetMessageAsync(
-                messageId,
-                cancellationToken);
-
-        screen.ErrorMessage =
-            string.IsNullOrWhiteSpace(text)
-                ? $"{messageId}-UNSPECIFIED ERROR / CALL COMPUTER SERVICES"
-                : $"{messageId}-{text.Trim()}";
-    }
-
-    private static List<D158302RemarkRow> CreateBlankRows()
-    {
-        return Enumerable
-            .Range(0, 5)
-            .Select(_ => new D158302RemarkRow())
-            .ToList();
-    }
-
-    private static bool IsValidAction(string action)
-    {
-        action = Normalize(action);
-
-        return action == "SO" ||
-               (action.Length > 0 &&
-                action.All(char.IsDigit));
-    }
-
-    private static bool IsValidHistory(string history)
-    {
-        history = Normalize(history);
-
-        return history is "N" or "Y";
-    }
-
-    private static void NormalizeInput(
-        D158302Input input)
-    {
-        input.Action =
-            Normalize(input.Action);
-
-        input.JobNumber =
-            Normalize(input.JobNumber)
-                .Replace("'", "");
-
-        input.FunctionalArea =
-            Normalize(input.FunctionalArea)
-                .Replace("'", "");
-
-        input.OriginalJobNumber =
-            Normalize(input.OriginalJobNumber);
-
-        input.OriginalFunctionalArea =
-            Normalize(input.OriginalFunctionalArea);
-
-        input.History =
-            Normalize(input.History);
-
-        input.HistoryHold =
-            Normalize(input.HistoryHold);
-
-        input.LatestSelection =
-            Normalize(input.LatestSelection);
-
-        foreach (var row in input.Remarks)
-        {
-            row.Selection =
-                Normalize(row.Selection);
-        }
-    }
-
-    private static string Normalize(string? value)
-    {
-        return (value ?? "")
-            .Trim()
-            .ToUpperInvariant();
-    }
-
-    private static string FormatYearMonth(string? value)
-    {
-        var text =
-            (value ?? "").Trim();
-
-        if (text.Length < 6)
-            return "";
-
-        var year = text[..4];
-        var month = text.Substring(4, 2);
-
-        // Preserve legacy behavior: if year is valid but
-        // month is unusual, display MM/YYYY anyway.
-        if (int.TryParse(year, out _))
-            return $"{month}/{year}";
-
-        return "  /    ";
-    }
-
-    private static string FormatYearMonthDay(string? value)
-    {
-        var text =
-            (value ?? "").Trim();
-
-        if (text.Length != 8)
-            return "";
-
-        var year = text[..4];
-        var month = text.Substring(4, 2);
-        var day = text.Substring(6, 2);
-
-        return $"{month}/{day}/{year}";
-    }
-}
-
-
+        if (count <= 0)
+            return Array.Empty<D158302RemarkRecord>();
+
+        var sql = """
+            SELECT TOP (@Count)
+                JOBNO,
+                FUNC_AREA,
+                REMARK_R,
+                LAST_UPDATED,
+                REMTYPE,
+                REMSEQ,
+                REM_STA
