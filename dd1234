@@ -340,4 +340,153 @@ public sealed class D158302Model : PageModel
 
 
     // ============================================================
-    // APPLY APPLICATION
+    // APPLY APPLICATION SCREEN TO RAZOR PAGE
+    // ============================================================
+
+    private void ApplyScreenToPage()
+    {
+        Screen ??= new D158302Screen();
+
+        JobNumber =
+            Normalize(Screen.JobNumber);
+
+        FunctionalArea =
+            Normalize(Screen.FunctionalArea);
+
+        History =
+            NormalizeHistory(Screen.History);
+
+        /*
+         * Normal 302 display is protected.
+         *
+         * F6/reset makes both fields editable.
+         */
+        if (Screen.ScreenReset)
+        {
+            Screen.JobNumberEditable = true;
+            Screen.FunctionalAreaEditable = true;
+        }
+        else
+        {
+            Screen.JobNumberEditable = false;
+            Screen.FunctionalAreaEditable = false;
+        }
+
+        EnsureSelections();
+    }
+
+
+    // ============================================================
+    // NORMALIZE POSTED VALUES
+    // ============================================================
+
+    private void NormalizePostedValues()
+    {
+        Action =
+            Normalize(Action);
+
+        JobNumber =
+            Normalize(JobNumber);
+
+        FunctionalArea =
+            Normalize(FunctionalArea);
+
+        History =
+            NormalizeHistory(History);
+
+        LatestSelection =
+            NormalizeSelection(
+                LatestSelection);
+
+        EnsureSelections();
+
+        for (var i = 0; i < Selections.Count; i++)
+        {
+            Selections[i] =
+                NormalizeSelection(
+                    Selections[i]);
+        }
+    }
+
+
+    // ============================================================
+    // SELECTION LIST
+    // ============================================================
+
+    private void EnsureSelections()
+    {
+        Selections ??=
+            new List<string>();
+
+        while (Selections.Count < 5)
+        {
+            Selections.Add("");
+        }
+
+        if (Selections.Count > 5)
+        {
+            Selections =
+                Selections
+                    .Take(5)
+                    .ToList();
+        }
+    }
+
+    private static List<string>
+        CreateBlankSelections()
+    {
+        return new List<string>
+        {
+            "",
+            "",
+            "",
+            "",
+            ""
+        };
+    }
+
+
+    // ============================================================
+    // VALUE HELPERS
+    // ============================================================
+
+    private static string Normalize(
+        string? value)
+    {
+        return (value ?? "")
+            .Trim()
+            .ToUpperInvariant();
+    }
+
+    private static string NormalizeHistory(
+        string? value)
+    {
+        var history =
+            Normalize(value);
+
+        if (history.Length > 1)
+        {
+            history =
+                history[..1];
+        }
+
+        return string.IsNullOrWhiteSpace(history)
+            ? "N"
+            : history;
+    }
+
+    private static string NormalizeSelection(
+        string? value)
+    {
+        var selection =
+            Normalize(value);
+
+        if (selection.Length > 1)
+        {
+            selection =
+                selection[..1];
+        }
+
+        return selection;
+    }
+}
