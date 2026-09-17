@@ -1,217 +1,675 @@
+@page
+@model PCPM.Web.Pages.D158302Model
+@{
+    ViewData["Title"] = "D158302";
 
-public async Task<IReadOnlyList<D158302RemarkRecord>>
-    GetRemarksForwardAsync(
-        string jobNumber,
-        string functionalArea,
-        string history,
-        D158302RemarkKey? bottomKey,
-        int count,
-        CancellationToken cancellationToken = default)
-{
-    if (count <= 0)
-        return Array.Empty<D158302RemarkRecord>();
-
-    var sql = @"
-        SELECT TOP (@Count)
-            JOBNO,
-            FUNC_AREA,
-            REMARK_R,
-            LAST_UPDATED,
-            REMTYPE,
-            REMSEQ,
-            REM_STA_FLAG,
-            REM_DIS_FLAG,
-            HIST_FLAG,
-            USERID_R
-        FROM [PRECONSTRUCTION].[dbo].[T158_REMARKS]
-        WHERE ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
-          AND LTRIM(RTRIM(HIST_FLAG)) =
-              LTRIM(RTRIM(@History))
-          AND LTRIM(RTRIM(JOBNO)) =
-              LTRIM(RTRIM(@JobNumber))
-          AND LTRIM(RTRIM(FUNC_AREA)) =
-              LTRIM(RTRIM(@FunctionalArea))";
-
-    if (bottomKey is not null)
-    {
-        sql += @"
-          AND
-          (
-                LTRIM(RTRIM(LAST_UPDATED)) < @LastUpdated
-
-             OR
-             (
-                 LTRIM(RTRIM(LAST_UPDATED)) = @LastUpdated
-                 AND REMTYPE < @RemarkType
-             )
-
-             OR
-             (
-                 LTRIM(RTRIM(LAST_UPDATED)) = @LastUpdated
-                 AND REMTYPE = @RemarkType
-                 AND REMSEQ < @RemarkSequence
-             )
-          )";
-    }
-
-    sql += @"
-        ORDER BY
-            LAST_UPDATED DESC,
-            REMTYPE DESC,
-            REMSEQ DESC;";
-
-    var records =
-        new List<D158302RemarkRecord>();
-
-    await using var connection =
-        new SqlConnection(_connectionString);
-
-    await connection.OpenAsync(cancellationToken);
-
-    await using var command =
-        new SqlCommand(sql, connection);
-
-    AddJobNumberParameter(
-        command,
-        jobNumber);
-
-    AddFunctionalAreaParameter(
-        command,
-        functionalArea);
-
-    AddHistoryParameter(
-        command,
-        history);
-
-    command.Parameters.Add(
-        "@Count",
-        SqlDbType.Int).Value = count;
-
-    if (bottomKey is not null)
-    {
-        AddRemarkKeyParameters(
-            command,
-            bottomKey);
-    }
-
-    await using var reader =
-        await command.ExecuteReaderAsync(cancellationToken);
-
-    while (await reader.ReadAsync(cancellationToken))
-    {
-        records.Add(
-            MapRemark(reader));
-    }
-
-    return records;
+    var screen = Model.Screen;
 }
 
+<div class="d158302-page">
+
+    <form method="post"
+          id="d158302Form"
+          autocomplete="off">
+
+        @Html.AntiForgeryToken()
+
+        <div class="d158302-screen">
+
+            <!-- ========================================================= -->
+            <!-- HEADER                                                    -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-header-row">
+
+                <div class="d158302-action-area">
+                    <span class="d158302-label">ACTION</span>
+
+                    <input asp-for="Action"
+                           id="actionInput"
+                           maxlength="3"
+                           class="d158302-input d158302-action-input"
+                           oninput="this.value=this.value.toUpperCase();" />
+                </div>
+
+                <div class="d158302-main-title">
+                    ARDOT PRE-CONSTRUCTION PROJECT MONITORING
+                </div>
+
+                <div class="d158302-screen-code">
+                    D158302
+                </div>
+
+            </div>
 
 
+            <div class="d158302-header-row d158302-header-row-two">
+
+                <div class="d158302-screen-number">
+                    <span>SCREEN</span>
+                    <span class="d158302-screen-value">302</span>
+                </div>
+
+                <div class="d158302-subtitle">
+                    INQUIRY FUNCTIONAL AREA STATUS
+                </div>
+
+                <div class="d158302-date">
+                    @DateTime.Now.ToString("MM/dd/yyyy")
+                </div>
+
+            </div>
 
 
+            <div class="d158302-divider">
+                =============================================================================
+            </div>
 
-public async Task<IReadOnlyList<D158302RemarkRecord>>
-    GetRemarksBackwardAsync(
-        string jobNumber,
-        string functionalArea,
-        string history,
-        D158302RemarkKey topKey,
-        int count,
-        CancellationToken cancellationToken = default)
+
+            <!-- ========================================================= -->
+            <!-- JOB NUMBER / FUNCTIONAL AREA                              -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-job-line">
+
+                <div class="d158302-job-block">
+
+                    @if (screen?.ScreenReset == true)
+                    {
+                        <input asp-for="JobNumber"
+                               id="jobNumberInput"
+                               maxlength="10"
+                               class="d158302-input d158302-job-input"
+                               oninput="this.value=this.value.toUpperCase();" />
+                    }
+                    else
+                    {
+                        <input asp-for="JobNumber"
+                               id="jobNumberInput"
+                               maxlength="10"
+                               readonly
+                               class="d158302-input d158302-readonly d158302-job-input" />
+                    }
+
+                    <div class="d158302-under-label">
+                        JOB NUMBER
+                    </div>
+
+                </div>
+
+
+                <div class="d158302-fa-block">
+
+                    @if (screen?.ScreenReset == true)
+                    {
+                        <input asp-for="FunctionalArea"
+                               id="functionalAreaInput"
+                               maxlength="2"
+                               class="d158302-input d158302-fa-input"
+                               oninput="this.value=this.value.toUpperCase();" />
+                    }
+                    else
+                    {
+                        <input asp-for="FunctionalArea"
+                               id="functionalAreaInput"
+                               maxlength="2"
+                               readonly
+                               class="d158302-input d158302-readonly d158302-fa-input" />
+                    }
+
+                    <div class="d158302-under-label">
+                        FA
+                    </div>
+
+                </div>
+
+
+                <div class="d158302-fa-description">
+                    @(screen?.FunctionalAreaDescription ?? "")
+                </div>
+
+
+                <div class="d158302-status-block">
+
+                    <span class="d158302-label">
+                        STATUS:
+                    </span>
+
+                    <span class="d158302-field">
+                        @(screen?.FunctionalAreaStatus ?? "")
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <!-- ========================================================= -->
+            <!-- DATE / STATUS AREA                                        -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-dates-title">
+                ----------------DATES----------------
+            </div>
+
+
+            <div class="d158302-status-heading-row">
+
+                <div class="d158302-percent-heading">
+                    PERCENT COMPLETE
+                </div>
+
+                <div class="d158302-date-heading d158302-start-heading">
+                    START
+                </div>
+
+                <div class="d158302-date-heading d158302-proj-heading">
+                    PROJ COM
+                </div>
+
+                <div class="d158302-date-heading d158302-complete-heading">
+                    COMPLETE
+                </div>
+
+                <div class="d158302-date-heading d158302-updated-heading">
+                    UPDATED
+                </div>
+
+                <div class="d158302-date-heading d158302-user-heading">
+                    USR
+                </div>
+
+            </div>
+
+
+            <div class="d158302-status-value-row">
+
+                <div class="d158302-percent-value">
+                    @(screen?.PercentComplete ?? "")
+                </div>
+
+                <div class="d158302-start-value">
+                    @(screen?.StartDate ?? "")
+                </div>
+
+                <div class="d158302-proj-value">
+                    @(screen?.ProjectedEndDate ?? "")
+                </div>
+
+                <div class="d158302-complete-value">
+                    @(screen?.EndDate ?? "")
+                </div>
+
+                <div class="d158302-updated-value">
+                    @(screen?.LastUpdated ?? "")
+                </div>
+
+                <div class="d158302-user-value">
+                    @(screen?.UserId ?? "")
+                </div>
+
+            </div>
+
+
+            <!-- ========================================================= -->
+            <!-- HISTORY                                                   -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-history-line">
+
+                <span class="d158302-label">
+                    HISTORY:
+                </span>
+
+                <input asp-for="History"
+                       id="historyInput"
+                       maxlength="1"
+                       class="d158302-input d158302-history-input"
+                       oninput="this.value=this.value.toUpperCase();" />
+
+            </div>
+
+
+            <!-- ========================================================= -->
+            <!-- REMARKS WORK AREA                                         -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-remarks-title">
+                REMARKS WORK AREA
+            </div>
+
+
+            <div class="d158302-remarks-header">
+
+                <span class="d158302-col-select">
+                    SEL
+                </span>
+
+                <span class="d158302-col-remark">
+                    REMARKS:
+                </span>
+
+                <span class="d158302-col-date">
+                    DATE
+                </span>
+
+                <span class="d158302-col-type">
+                    TP
+                </span>
+
+                <span class="d158302-col-status">
+                    SF
+                </span>
+
+                <span class="d158302-col-delete">
+                    DF
+                </span>
+
+            </div>
+
+
+            <div class="d158302-remarks-body">
+
+                @for (var i = 0; i < 5; i++)
+                {
+                    var hasRow =
+                        screen?.Remarks != null &&
+                        i < screen.Remarks.Count;
+
+                    var row = hasRow
+                        ? screen!.Remarks[i]
+                        : null;
+
+                    var selectionValue =
+                        Model.Selections != null &&
+                        i < Model.Selections.Count
+                            ? Model.Selections[i]
+                            : "";
+
+
+                    <div class="d158302-remark-row">
+
+                        <div class="d158302-remark-select">
+
+                            @if (row != null && row.CanSelect)
+                            {
+                                <input name="Selections[@i]"
+                                       value="@selectionValue"
+                                       maxlength="1"
+                                       class="d158302-input d158302-selection-input"
+                                       oninput="this.value=this.value.toUpperCase();" />
+                            }
+                            else
+                            {
+                                <!-- Keep list binding aligned with five rows -->
+                                <input type="hidden"
+                                       name="Selections[@i]"
+                                       value="" />
+
+                                <span class="d158302-empty-selection"></span>
+                            }
+
+                        </div>
+
+
+                        <div class="d158302-remark-text">
+                            @(row?.Remark ?? "")
+                        </div>
+
+
+                        <div class="d158302-remark-date">
+                            @(row?.LastUpdated ?? "")
+                        </div>
+
+
+                        <div class="d158302-remark-type">
+
+                            @if (row != null && row.RemarkType != 0)
+                            {
+                                @row.RemarkType
+                            }
+
+                        </div>
+
+
+                        <div class="d158302-remark-status">
+                            @(row?.StatusFlag ?? "")
+                        </div>
+
+
+                        <div class="d158302-remark-delete">
+                            @(row?.DeleteFlag ?? "")
+                        </div>
+
+                    </div>
+                }
+
+            </div>
+
+
+            <!-- ========================================================= -->
+            <!-- SELECTION INSTRUCTION                                     -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-instruction">
+                ENTER 'A' 'D' OR 'U' IN THE SELECTION FIELD TO ACCESS THE DESIRED FUNCTION
+            </div>
+
+
+            <!-- ========================================================= -->
+            <!-- LATEST REMARK                                             -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-latest-heading">
+
+                <span>
+                    LATEST REMARK MADE BY
+                </span>
+
+                <span class="d158302-latest-fa">
+                    @(screen?.LatestRemark?.FunctionalArea ?? "")
+                </span>
+
+                <span class="d158302-latest-user">
+                    @(screen?.LatestRemark?.UserId ?? "")
+                </span>
+
+            </div>
+
+
+            <div class="d158302-latest-row">
+
+                <div class="d158302-latest-select">
+
+                    @if (screen?.LatestRemark != null &&
+                         screen.LatestRemark.CanSelect)
+                    {
+                        <input asp-for="LatestRemarkSelection"
+                               id="latestRemarkSelection"
+                               maxlength="1"
+                               class="d158302-input d158302-selection-input"
+                               oninput="this.value=this.value.toUpperCase();" />
+                    }
+                    else
+                    {
+                        <input type="hidden"
+                               asp-for="LatestRemarkSelection" />
+
+                        <span class="d158302-empty-selection"></span>
+                    }
+
+                </div>
+
+
+                <div class="d158302-latest-remark">
+                    @(screen?.LatestRemark?.Remark ?? "")
+                </div>
+
+
+                <div class="d158302-latest-date">
+                    @(screen?.LatestRemark?.LastUpdated ?? "")
+                </div>
+
+
+                <div class="d158302-latest-type">
+
+                    @if (screen?.LatestRemark != null &&
+                         screen.LatestRemark.RemarkType != 0)
+                    {
+                        @screen.LatestRemark.RemarkType
+                    }
+
+                </div>
+
+
+                <div class="d158302-latest-status">
+                    @(screen?.LatestRemark?.StatusFlag ?? "")
+                </div>
+
+
+                <div class="d158302-latest-delete">
+                    @(screen?.LatestRemark?.DeleteFlag ?? "")
+                </div>
+
+            </div>
+
+
+            <!-- ========================================================= -->
+            <!-- BOTTOM DIVIDER                                            -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-divider d158302-bottom-divider">
+                =============================================================================
+            </div>
+
+
+            <!-- ========================================================= -->
+            <!-- FUNCTION KEYS                                             -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-function-row">
+
+                <button type="submit"
+                        asp-page-handler="Help"
+                        id="helpButton"
+                        class="d158302-function-button"
+                        formnovalidate>
+                    F1=HELP
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="Previous"
+                        id="previousButton"
+                        class="d158302-function-button"
+                        formnovalidate>
+                    F3=PREV
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="RemarkBackward"
+                        id="remarkBackwardButton"
+                        class="d158302-function-button"
+                        formnovalidate>
+                    F4=SCRLB
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="RemarkForward"
+                        id="remarkForwardButton"
+                        class="d158302-function-button"
+                        formnovalidate>
+                    F5=SCRLF
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="Reset"
+                        id="resetButton"
+                        class="d158302-function-button"
+                        formnovalidate>
+                    F6=RESET
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="StatusBackward"
+                        id="statusBackwardButton"
+                        class="d158302-function-button"
+                        formnovalidate>
+                    F7=BKWRD
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="StatusForward"
+                        id="statusForwardButton"
+                        class="d158302-function-button"
+                        formnovalidate>
+                    F8=FRWRD
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="MainMenu"
+                        id="mainMenuButton"
+                        class="d158302-function-button"
+                        formnovalidate>
+                    F12=MAIN
+                </button>
+
+            </div>
+
+
+            <!-- ========================================================= -->
+            <!-- ERROR / INFORMATION MESSAGE                               -->
+            <!-- ========================================================= -->
+
+            <div class="d158302-message-area">
+
+                @if (!string.IsNullOrWhiteSpace(screen?.ErrorMessage))
+                {
+                    <span class="d158302-error-message">
+                        @screen.ErrorMessage
+                    </span>
+                }
+
+            </div>
+
+        </div>
+
+    </form>
+
+</div>
+
+
+@section Scripts
 {
-    if (count <= 0)
-        return Array.Empty<D158302RemarkRecord>();
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
 
-    const string sql = @"
-        SELECT TOP (@Count)
-            JOBNO,
-            FUNC_AREA,
-            REMARK_R,
-            LAST_UPDATED,
-            REMTYPE,
-            REMSEQ,
-            REM_STA_FLAG,
-            REM_DIS_FLAG,
-            HIST_FLAG,
-            USERID_R
-        FROM [PRECONSTRUCTION].[dbo].[T158_REMARKS]
-        WHERE ISNULL(LTRIM(RTRIM(DELFLAG)), '') = ''
-          AND LTRIM(RTRIM(HIST_FLAG)) =
-              LTRIM(RTRIM(@History))
-          AND LTRIM(RTRIM(JOBNO)) =
-              LTRIM(RTRIM(@JobNumber))
-          AND LTRIM(RTRIM(FUNC_AREA)) =
-              LTRIM(RTRIM(@FunctionalArea))
-          AND
-          (
-                LTRIM(RTRIM(LAST_UPDATED)) > @LastUpdated
+            const form =
+                document.getElementById("d158302Form");
 
-             OR
-             (
-                 LTRIM(RTRIM(LAST_UPDATED)) = @LastUpdated
-                 AND REMTYPE > @RemarkType
-             )
 
-             OR
-             (
-                 LTRIM(RTRIM(LAST_UPDATED)) = @LastUpdated
-                 AND REMTYPE = @RemarkType
-                 AND REMSEQ > @RemarkSequence
-             )
-          )
-        ORDER BY
-            LAST_UPDATED ASC,
-            REMTYPE ASC,
-            REMSEQ ASC;";
+            function pressButton(buttonId) {
 
-    var records =
-        new List<D158302RemarkRecord>();
+                const button =
+                    document.getElementById(buttonId);
 
-    await using var connection =
-        new SqlConnection(_connectionString);
+                if (button) {
+                    button.click();
+                }
+            }
 
-    await connection.OpenAsync(cancellationToken);
 
-    await using var command =
-        new SqlCommand(sql, connection);
+            document.addEventListener("keydown", function (event) {
 
-    AddJobNumberParameter(
-        command,
-        jobNumber);
+                switch (event.key) {
 
-    AddFunctionalAreaParameter(
-        command,
-        functionalArea);
+                    case "F1":
+                        event.preventDefault();
+                        pressButton("helpButton");
+                        return;
 
-    AddHistoryParameter(
-        command,
-        history);
+                    case "F3":
+                        event.preventDefault();
+                        pressButton("previousButton");
+                        return;
 
-    command.Parameters.Add(
-        "@Count",
-        SqlDbType.Int).Value = count;
+                    case "F4":
+                        event.preventDefault();
+                        pressButton("remarkBackwardButton");
+                        return;
 
-    AddRemarkKeyParameters(
-        command,
-        topKey);
+                    case "F5":
+                        event.preventDefault();
+                        pressButton("remarkForwardButton");
+                        return;
 
-    await using var reader =
-        await command.ExecuteReaderAsync(cancellationToken);
+                    case "F6":
+                        event.preventDefault();
+                        pressButton("resetButton");
+                        return;
 
-    while (await reader.ReadAsync(cancellationToken))
-    {
-        records.Add(
-            MapRemark(reader));
-    }
+                    case "F7":
+                        event.preventDefault();
+                        pressButton("statusBackwardButton");
+                        return;
 
-    // Database query is ASC because this is reverse scrolling.
-    // Screen 302 displays remarks newest to oldest.
-    records.Reverse();
+                    case "F8":
+                        event.preventDefault();
+                        pressButton("statusForwardButton");
+                        return;
 
-    return records;
+                    case "F12":
+                        event.preventDefault();
+                        pressButton("mainMenuButton");
+                        return;
+                }
+
+
+                /*
+                 * Normal ENTER goes through OnPostAsync().
+                 *
+                 * requestSubmit() is important here.
+                 * Do not use form.submit(), because requestSubmit()
+                 * preserves normal Razor Pages form processing.
+                 */
+                if (event.key === "Enter") {
+
+                    const target =
+                        event.target;
+
+                    if (target instanceof HTMLButtonElement) {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    if (form) {
+                        form.requestSubmit();
+                    }
+                }
+            });
+
+
+            /*
+             * Match the legacy screen behavior:
+             * ACTION, JOB NUMBER, FA, HISTORY and selection
+             * entries are converted to uppercase.
+             */
+            document
+                .querySelectorAll(
+                    ".d158302-input:not([readonly])"
+                )
+                .forEach(function (input) {
+
+                    input.addEventListener(
+                        "input",
+                        function () {
+
+                            this.value =
+                                this.value.toUpperCase();
+                        });
+                });
+
+
+            /*
+             * Put the cursor in JOB NUMBER after F6 reset.
+             */
+            const jobNumber =
+                document.getElementById(
+                    "jobNumberInput");
+
+            if (jobNumber &&
+                !jobNumber.hasAttribute("readonly")) {
+
+                jobNumber.focus();
+                jobNumber.select();
+            }
+        });
+    </script>
 }
-
-
-
-
