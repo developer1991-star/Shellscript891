@@ -1,459 +1,263 @@
 @page
-@model PCPM.Web.Pages.D158302Model
+@model PCPM.Pages.D158500Model
 @{
-    ViewData["Title"] = "D158302";
-
-    var screen = Model.Screen;
+    Layout = null;
+    ViewData["Title"] = "D158500";
 }
 
-<div class="d158302-page">
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
 
-    <form method="post"
-          id="d158302Form"
-          autocomplete="off">
+    <title>D158500</title>
 
-        @Html.AntiForgeryToken()
+    <link rel="stylesheet"
+          href="~/css/pcpm-terminal.css"
+          asp-append-version="true" />
+</head>
 
-        <div class="d158302-screen">
+<body>
 
-            <!-- ========================================================= -->
-            <!-- HEADER                                                    -->
-            <!-- ========================================================= -->
+    <div class="pcpm-screen">
 
-            <div class="d158302-header-row">
+        <form method="post"
+              asp-page="/D158500"
+              id="pcpmForm"
+              class="pcpm-form">
 
-                <div class="d158302-action-area">
-                    <span class="d158302-label">ACTION</span>
+
+            <!-- =========================================================
+                 HEADER
+                 ========================================================= -->
+
+            <div class="pcpm-header-row">
+
+                <div class="pcpm-header-left">
+
+                    ACTION
 
                     <input asp-for="Action"
-                           id="actionInput"
+                           class="pcpm-input pcpm-input-3"
                            maxlength="3"
-                           class="d158302-input d158302-action-input"
-                           oninput="this.value=this.value.toUpperCase();" />
+                           autocomplete="off"
+                           oninput="this.value = this.value.toUpperCase();"
+                           autofocus />
+
                 </div>
 
-                <div class="d158302-main-title">
+
+                <div class="pcpm-header-center">
                     ARDOT PRE-CONSTRUCTION PROJECT MONITORING
                 </div>
 
-                <div class="d158302-screen-code">
-                    D158302
+
+                <div class="pcpm-header-right">
+                    D158500
                 </div>
 
             </div>
 
 
-            <div class="d158302-header-row d158302-header-row-two">
+            <div class="pcpm-header-row">
 
-                <div class="d158302-screen-number">
-                    <span>SCREEN</span>
-                    <span class="d158302-screen-value">302</span>
-                </div>
-
-                <div class="d158302-subtitle">
-                    INQUIRY FUNCTIONAL AREA STATUS
-                </div>
-
-                <div class="d158302-date">
-                    @DateTime.Now.ToString("MM/dd/yyyy")
-                </div>
-
-            </div>
-
-
-            <div class="d158302-divider">
-                =============================================================================
-            </div>
-
-
-            <!-- ========================================================= -->
-            <!-- JOB NUMBER / FUNCTIONAL AREA                              -->
-            <!-- ========================================================= -->
-
-            <div class="d158302-job-line">
-
-                <div class="d158302-job-block">
-
-                    @if (screen?.ScreenReset == true)
-                    {
-                        <input asp-for="JobNumber"
-                               id="jobNumberInput"
-                               maxlength="10"
-                               class="d158302-input d158302-job-input"
-                               oninput="this.value=this.value.toUpperCase();" />
-                    }
-                    else
-                    {
-                        <input asp-for="JobNumber"
-                               id="jobNumberInput"
-                               maxlength="10"
-                               readonly
-                               class="d158302-input d158302-readonly d158302-job-input" />
-                    }
-
-                    <div class="d158302-under-label">
-                        JOB NUMBER
-                    </div>
-
+                <div class="pcpm-header-left">
+                    SCREEN&nbsp;&nbsp;500
                 </div>
 
 
-                <div class="d158302-fa-block">
-
-                    @if (screen?.ScreenReset == true)
-                    {
-                        <input asp-for="FunctionalArea"
-                               id="functionalAreaInput"
-                               maxlength="2"
-                               class="d158302-input d158302-fa-input"
-                               oninput="this.value=this.value.toUpperCase();" />
-                    }
-                    else
-                    {
-                        <input asp-for="FunctionalArea"
-                               id="functionalAreaInput"
-                               maxlength="2"
-                               readonly
-                               class="d158302-input d158302-readonly d158302-fa-input" />
-                    }
-
-                    <div class="d158302-under-label">
-                        FA
-                    </div>
-
+                <div class="pcpm-header-center">
+                    JOB STATUS SUMMARY INQUIRY
                 </div>
 
 
-                <div class="d158302-fa-description">
-                    @(screen?.FunctionalAreaDescription ?? "")
-                </div>
-
-
-                <div class="d158302-status-block">
-
-                    <span class="d158302-label">
-                        STATUS:
-                    </span>
-
-                    <span class="d158302-field">
-                        @(screen?.FunctionalAreaStatus ?? "")
-                    </span>
-
+                <div class="pcpm-header-right">
+                    @Model.DisplayDate
                 </div>
 
             </div>
 
 
-            <!-- ========================================================= -->
-            <!-- DATE / STATUS AREA                                        -->
-            <!-- ========================================================= -->
-
-            <div class="d158302-dates-title">
-                ----------------DATES----------------
-            </div>
+            <div class="pcpm-separator"></div>
 
 
-            <div class="d158302-status-heading-row">
+            <!-- =========================================================
+                 JOB
+                 ========================================================= -->
 
-                <div class="d158302-percent-heading">
-                    PERCENT COMPLETE
-                </div>
+            <div class="d158500-job-row">
 
-                <div class="d158302-date-heading d158302-start-heading">
-                    START
-                </div>
+                <span>JOB NUMBER:</span>
 
-                <div class="d158302-date-heading d158302-proj-heading">
-                    PROJ COM
-                </div>
+                <input asp-for="JobNumber"
+                       class="pcpm-input pcpm-input-job"
+                       maxlength="10"
+                       autocomplete="off"
+                       oninput="this.value = this.value.toUpperCase();"
+                       readonly="@(Model.Screen?.ScreenReset == true ? null : "readonly")" />
 
-                <div class="d158302-date-heading d158302-complete-heading">
-                    COMPLETE
-                </div>
+                <input type="hidden" asp-for="OriginalJobNumber" />
+                <span>NAME:</span>
 
-                <div class="d158302-date-heading d158302-updated-heading">
-                    UPDATED
-                </div>
-
-                <div class="d158302-date-heading d158302-user-heading">
-                    USR
-                </div>
+                <span>@Model.JobName</span>
 
             </div>
 
 
-            <div class="d158302-status-value-row">
+            <!-- =========================================================
+                 SUMMARY
+                 ========================================================= -->
 
-                <div class="d158302-percent-value">
-                    @(screen?.PercentComplete ?? "")
-                </div>
+            <div class="d158500-summary-row">
 
-                <div class="d158302-start-value">
-                    @(screen?.StartDate ?? "")
-                </div>
+                <span>SF</span>
 
-                <div class="d158302-proj-value">
-                    @(screen?.ProjectedEndDate ?? "")
-                </div>
-
-                <div class="d158302-complete-value">
-                    @(screen?.EndDate ?? "")
-                </div>
-
-                <div class="d158302-updated-value">
-                    @(screen?.LastUpdated ?? "")
-                </div>
-
-                <div class="d158302-user-value">
-                    @(screen?.UserId ?? "")
-                </div>
-
-            </div>
-
-
-            <!-- ========================================================= -->
-            <!-- HISTORY                                                   -->
-            <!-- ========================================================= -->
-
-            <div class="d158302-history-line">
-
-                <span class="d158302-label">
-                    HISTORY:
-                </span>
-
-                <input asp-for="History"
-                       id="historyInput"
+                <input asp-for="SF"
+                       class="pcpm-input pcpm-input-1"
                        maxlength="1"
-                       class="d158302-input d158302-history-input"
-                       oninput="this.value=this.value.toUpperCase();" />
+                       autocomplete="off"
+                       oninput="this.value = this.value.toUpperCase();" />
+
+
+                <span>TOTAL FUNDING:</span>
+
+                <span>@Model.TotalFunding</span>
+
+
+                <span>PS&amp;E:</span>
+
+                <span>@Model.PseEnd</span>
+
+
+                <span>VALUE ENGINEERING:</span>
+
+                <span>@Model.ValueEngineeringPercent</span>
 
             </div>
 
 
-            <!-- ========================================================= -->
-            <!-- REMARKS WORK AREA                                         -->
-            <!-- ========================================================= -->
+            <!-- =========================================================
+                 TABLE HEADER
+                 ========================================================= -->
 
-            <div class="d158302-remarks-title">
-                REMARKS WORK AREA
-            </div>
+            <div class="d158500-table-header">
 
+                <span>SEL</span>
 
-            <div class="d158302-remarks-header">
+                <span>FUNCTIONAL AREA</span>
 
-                <span class="d158302-col-select">
-                    SEL
-                </span>
+                <span>FA</span>
 
-                <span class="d158302-col-remark">
-                    REMARKS:
-                </span>
+                <span>STARTED</span>
 
-                <span class="d158302-col-date">
-                    DATE
-                </span>
+                <span>PROJ COM</span>
 
-                <span class="d158302-col-type">
-                    TP
-                </span>
+                <span>% COMPL</span>
 
-                <span class="d158302-col-status">
-                    SF
-                </span>
+                <span>COMPLETE</span>
 
-                <span class="d158302-col-delete">
-                    DF
-                </span>
+                <span>FLAG</span>
 
             </div>
 
 
-            <div class="d158302-remarks-body">
+            <!-- =========================================================
+                 11 STATUS ROWS
+                 ========================================================= -->
+            @for (var i = 0;
+            i < Model.Rows.Count;
+            i++)
+            {
+                <div class="d158500-table-row">
 
-                @for (var i = 0; i < 5; i++)
-                {
-                    var hasRow =
-                        screen?.Remarks != null &&
-                        i < screen.Remarks.Count;
+                   
 
-                    var row = hasRow
-                        ? screen!.Remarks[i]
-                        : null;
-
-                    var selectionValue =
-                        Model.Selections != null &&
-                        i < Model.Selections.Count
-                            ? Model.Selections[i]
-                            : "";
-
-
-                    <div class="d158302-remark-row">
-
-                        <div class="d158302-remark-select">
-
-                            @if (row != null && row.CanSelect)
-                            {
-                                <input name="Selections[@i]"
-                                       value="@selectionValue"
-                                       maxlength="1"
-                                       class="d158302-input d158302-selection-input"
-                                       oninput="this.value=this.value.toUpperCase();" />
-                            }
-                            else
-                            {
-                                <!-- Keep list binding aligned with five rows -->
-                                <input type="hidden"
-                                       name="Selections[@i]"
-                                       value="" />
-
-                                <span class="d158302-empty-selection"></span>
-                            }
-
-                        </div>
+                    <input asp-for="Selections[i]"
+                           class="pcpm-input pcpm-input-1 selection-field"
+                           maxlength="1"
+                           autocomplete="off" 
+                           oninput="this.value = this.value.toUpperCase();" />
 
 
-                        <div class="d158302-remark-text">
-                            @(row?.Remark ?? "")
-                        </div>
+                    <span>
+                        @Model.Rows[i].Description
+                    </span>
 
 
-                        <div class="d158302-remark-date">
-                            @(row?.LastUpdated ?? "")
-                        </div>
+                    <span>
+                        @Model.Rows[i].FunctionalArea
+                    </span>
 
 
-                        <div class="d158302-remark-type">
-
-                            @if (row != null && row.RemarkType != 0)
-                            {
-                                @row.RemarkType
-                            }
-
-                        </div>
+                    <span>
+                        @Model.Rows[i].StartDate
+                    </span>
 
 
-                        <div class="d158302-remark-status">
-                            @(row?.StatusFlag ?? "")
-                        </div>
+                    <span>
+                        @Model.Rows[i].ProjectedEndDate
+                    </span>
 
 
-                        <div class="d158302-remark-delete">
-                            @(row?.DeleteFlag ?? "")
-                        </div>
-
-                    </div>
-                }
-
-            </div>
+                    <span>
+                        @Model.Rows[i].Percent
+                    </span>
 
 
-            <!-- ========================================================= -->
-            <!-- SELECTION INSTRUCTION                                     -->
-            <!-- ========================================================= -->
-
-            <div class="d158302-instruction">
-                ENTER 'A' 'D' OR 'U' IN THE SELECTION FIELD TO ACCESS THE DESIRED FUNCTION
-            </div>
+                    <span>
+                        @Model.Rows[i].EndDate
+                    </span>
 
 
-            <!-- ========================================================= -->
-            <!-- LATEST REMARK                                             -->
-            <!-- ========================================================= -->
+                    <span>
+                        @Model.Rows[i].Status
+                    </span>
 
-            <div class="d158302-latest-heading">
+                </div>
+            }
+
+
+            <!-- =========================================================
+                 REMARK
+                 ========================================================= -->
+
+            <div class="d158500-remark-row">
+
+                <input asp-for="SelRem"
+                       class="pcpm-input pcpm-input-1"
+                       maxlength="1"
+                       autocomplete="off"
+                       oninput="this.value = this.value.toUpperCase();" />
+
+
+                <span>LAST REMARK:</span>
+
 
                 <span>
-                    LATEST REMARK MADE BY
+                    @Model.LatestRemark
                 </span>
 
-                <span class="d158302-latest-fa">
-                    @(screen?.LatestRemark?.FunctionalArea ?? "")
-                </span>
 
-                <span class="d158302-latest-user">
-                    @(screen?.LatestRemark?.UserId ?? "")
+                <span>
+                    @Model.LastUpdated
                 </span>
 
             </div>
 
 
-            <div class="d158302-latest-row">
-
-                <div class="d158302-latest-select">
-
-                    @if (screen?.LatestRemark != null &&
-                         screen.LatestRemark.CanSelect)
-                    {
-                        <input asp-for="LatestRemarkSelection"
-                               id="latestRemarkSelection"
-                               maxlength="1"
-                               class="d158302-input d158302-selection-input"
-                               oninput="this.value=this.value.toUpperCase();" />
-                    }
-                    else
-                    {
-                        <input type="hidden"
-                               asp-for="LatestRemarkSelection" />
-
-                        <span class="d158302-empty-selection"></span>
-                    }
-
-                </div>
+            <div class="pcpm-separator"></div>
 
 
-                <div class="d158302-latest-remark">
-                    @(screen?.LatestRemark?.Remark ?? "")
-                </div>
+            <!-- =========================================================
+                 FUNCTION KEYS
+                 ========================================================= -->
 
-
-                <div class="d158302-latest-date">
-                    @(screen?.LatestRemark?.LastUpdated ?? "")
-                </div>
-
-
-                <div class="d158302-latest-type">
-
-                    @if (screen?.LatestRemark != null &&
-                         screen.LatestRemark.RemarkType != 0)
-                    {
-                        @screen.LatestRemark.RemarkType
-                    }
-
-                </div>
-
-
-                <div class="d158302-latest-status">
-                    @(screen?.LatestRemark?.StatusFlag ?? "")
-                </div>
-
-
-                <div class="d158302-latest-delete">
-                    @(screen?.LatestRemark?.DeleteFlag ?? "")
-                </div>
-
-            </div>
-
-
-            <!-- ========================================================= -->
-            <!-- BOTTOM DIVIDER                                            -->
-            <!-- ========================================================= -->
-
-            <div class="d158302-divider d158302-bottom-divider">
-                =============================================================================
-            </div>
-
-
-            <!-- ========================================================= -->
-            <!-- FUNCTION KEYS                                             -->
-            <!-- ========================================================= -->
-
-            <div class="d158302-function-row">
+            <div class="pcpm-function-keys">
 
                 <button type="submit"
                         asp-page-handler="Help"
                         id="helpButton"
-                        class="d158302-function-button"
-                        formnovalidate>
+                        class="pcpm-function-button">
                     F1=HELP
                 </button>
 
@@ -461,215 +265,133 @@
                 <button type="submit"
                         asp-page-handler="Previous"
                         id="previousButton"
-                        class="d158302-function-button"
-                        formnovalidate>
-                    F3=PREV
-                </button>
-
-
-                <button type="submit"
-                        asp-page-handler="RemarkBackward"
-                        id="remarkBackwardButton"
-                        class="d158302-function-button"
-                        formnovalidate>
-                    F4=SCRLB
-                </button>
-
-
-                <button type="submit"
-                        asp-page-handler="RemarkForward"
-                        id="remarkForwardButton"
-                        class="d158302-function-button"
-                        formnovalidate>
-                    F5=SCRLF
+                        class="pcpm-function-button">
+                    F3=PREVIOUS
                 </button>
 
 
                 <button type="submit"
                         asp-page-handler="Reset"
                         id="resetButton"
-                        class="d158302-function-button"
-                        formnovalidate>
+                        class="pcpm-function-button">
                     F6=RESET
                 </button>
 
 
                 <button type="submit"
-                        asp-page-handler="StatusBackward"
-                        id="statusBackwardButton"
-                        class="d158302-function-button"
-                        formnovalidate>
-                    F7=BKWRD
+                        asp-page-handler="Backward"
+                        id="backwardButton"
+                        class="pcpm-function-button">
+                    F7=BACKWARD
                 </button>
 
 
                 <button type="submit"
-                        asp-page-handler="StatusForward"
-                        id="statusForwardButton"
-                        class="d158302-function-button"
-                        formnovalidate>
-                    F8=FRWRD
+                        asp-page-handler="Forward"
+                        id="forwardButton"
+                        class="pcpm-function-button">
+                    F8=FORWARD
                 </button>
 
 
                 <button type="submit"
                         asp-page-handler="MainMenu"
                         id="mainMenuButton"
-                        class="d158302-function-button"
-                        formnovalidate>
-                    F12=MAIN
+                        class="pcpm-function-button">
+                    F12=MAIN MENU
                 </button>
 
             </div>
 
 
-            <!-- ========================================================= -->
-            <!-- ERROR / INFORMATION MESSAGE                               -->
-            <!-- ========================================================= -->
-
-            <div class="d158302-message-area">
-
-                @if (!string.IsNullOrWhiteSpace(screen?.ErrorMessage))
-                {
-                    <span class="d158302-error-message">
-                        @screen.ErrorMessage
-                    </span>
-                }
-
+            <div class="pcpm-error">
+                @Model.ErrorMessage
             </div>
 
-        </div>
 
-    </form>
+            <button type="submit"
+                    id="enterButton"
+                    class="pcpm-hidden-submit">
+            </button>
 
-</div>
+        </form>
+
+    </div>
 
 
-@section Scripts
-{
     <script>
-        document.addEventListener("DOMContentLoaded", function () {
+        (() => {
 
-            const form =
-                document.getElementById("d158302Form");
+            document.querySelectorAll(
+                ".selection-field, .pcpm-input"
+            ).forEach(input => {
 
+                input.addEventListener(
+                    "input",
+                    function () {
 
-            function pressButton(buttonId) {
+                        this.value =
+                            this.value.toUpperCase();
 
-                const button =
-                    document.getElementById(buttonId);
+                    });
 
-                if (button) {
-                    button.click();
-                }
-            }
-
-
-            document.addEventListener("keydown", function (event) {
-
-                switch (event.key) {
-
-                    case "F1":
-                        event.preventDefault();
-                        pressButton("helpButton");
-                        return;
-
-                    case "F3":
-                        event.preventDefault();
-                        pressButton("previousButton");
-                        return;
-
-                    case "F4":
-                        event.preventDefault();
-                        pressButton("remarkBackwardButton");
-                        return;
-
-                    case "F5":
-                        event.preventDefault();
-                        pressButton("remarkForwardButton");
-                        return;
-
-                    case "F6":
-                        event.preventDefault();
-                        pressButton("resetButton");
-                        return;
-
-                    case "F7":
-                        event.preventDefault();
-                        pressButton("statusBackwardButton");
-                        return;
-
-                    case "F8":
-                        event.preventDefault();
-                        pressButton("statusForwardButton");
-                        return;
-
-                    case "F12":
-                        event.preventDefault();
-                        pressButton("mainMenuButton");
-                        return;
-                }
-
-
-                /*
-                 * Normal ENTER goes through OnPostAsync().
-                 *
-                 * requestSubmit() is important here.
-                 * Do not use form.submit(), because requestSubmit()
-                 * preserves normal Razor Pages form processing.
-                 */
-                if (event.key === "Enter") {
-
-                    const target =
-                        event.target;
-
-                    if (target instanceof HTMLButtonElement) {
-                        return;
-                    }
-
-                    event.preventDefault();
-
-                    if (form) {
-                        form.requestSubmit();
-                    }
-                }
             });
 
 
-            /*
-             * Match the legacy screen behavior:
-             * ACTION, JOB NUMBER, FA, HISTORY and selection
-             * entries are converted to uppercase.
-             */
-            document
-                .querySelectorAll(
-                    ".d158302-input:not([readonly])"
-                )
-                .forEach(function (input) {
+            document.addEventListener(
+                "keydown",
+                function (event) {
 
-                    input.addEventListener(
-                        "input",
-                        function () {
+                    let id = null;
 
-                            this.value =
-                                this.value.toUpperCase();
-                        });
+
+                    switch (event.key) {
+
+                        case "Enter":
+                            id = "enterButton";
+                            break;
+
+                        case "F1":
+                            id = "helpButton";
+                            break;
+
+                        case "F3":
+                            id = "previousButton";
+                            break;
+
+                        case "F6":
+                            id = "resetButton";
+                            break;
+
+                        case "F7":
+                            id = "backwardButton";
+                            break;
+
+                        case "F8":
+                            id = "forwardButton";
+                            break;
+
+                        case "F12":
+                            id = "mainMenuButton";
+                            break;
+                    }
+
+
+                    if (!id)
+                        return;
+
+
+                    event.preventDefault();
+
+
+                    document
+                        .getElementById(id)
+                        .click();
+
                 });
 
-
-            /*
-             * Put the cursor in JOB NUMBER after F6 reset.
-             */
-            const jobNumber =
-                document.getElementById(
-                    "jobNumberInput");
-
-            if (jobNumber &&
-                !jobNumber.hasAttribute("readonly")) {
-
-                jobNumber.focus();
-                jobNumber.select();
-            }
-        });
+        })();
     </script>
-}
+
+</body>
+</html>
