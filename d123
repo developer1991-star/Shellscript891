@@ -10,590 +10,726 @@
 <html>
 <head>
     <meta charset="utf-8" />
+
     <title>D158302</title>
 
     <link rel="stylesheet"
-          href="~/css/pcpm-terminal.css" />
+          href="~/css/pcpm-terminal.css"
+          asp-append-version="true" />
 
     <style>
-        body {
-            background-color: #F2F3FF;
-            font-family: "Courier New", Courier, monospace;
-            font-weight: bold;
+        /*
+         * Screen 302 specific layout only.
+         * Colors, fonts, inputs, buttons, screen background, etc.
+         * come from pcpm-terminal.css.
+         */
+
+        .d158302-job-row {
+            display: grid;
+            grid-template-columns:
+                auto 12ch
+                auto 4ch
+                1fr
+                auto 4ch;
+            column-gap: 1.25rem;
+            align-items: center;
+            margin-top: 0.75rem;
         }
 
-        .d158302-screen {
-            position: relative;
-            width: 820px;
-            height: 620px;
-            margin: 0 auto;
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            font-weight: bold;
-            white-space: pre;
+        .d158302-date-heading {
+            text-align: center;
+            margin-top: 0.75rem;
+            margin-bottom: 0.25rem;
         }
 
-        .d158302-field {
-            position: absolute;
+        .d158302-status-header,
+        .d158302-status-row {
+            display: grid;
+            grid-template-columns:
+                20ch
+                11ch
+                11ch
+                11ch
+                12ch
+                8ch;
+            align-items: center;
         }
 
-        .d158302-input {
-            position: absolute;
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            font-weight: bold;
-            padding: 2px 3px;
-            box-sizing: border-box;
-            text-transform: uppercase;
+        .d158302-status-header {
+            margin-bottom: 0.25rem;
         }
 
-        .d158302-readonly {
-            background-color: LightGray;
+        .d158302-status-row {
+            min-height: 1.6rem;
         }
 
-        .d158302-selection {
-            width: 24px;
+        .d158302-history-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .d158302-remarks-title {
+            text-align: center;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .d158302-remark-header,
+        .d158302-remark-row,
+        .d158302-latest-row {
+            display: grid;
+            grid-template-columns:
+                4ch
+                52ch
+                12ch
+                4ch
+                4ch
+                4ch;
+            column-gap: 0.5rem;
+            align-items: center;
+        }
+
+        .d158302-remark-header {
+            margin-bottom: 0.25rem;
+        }
+
+        .d158302-remark-row {
+            min-height: 1.75rem;
+        }
+
+        .d158302-remark-text {
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .d158302-instruction {
+            margin-top: 0.75rem;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .d158302-latest-heading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .d158302-selection-space {
+            display: inline-block;
+            width: 2ch;
+        }
+
+        .d158302-center {
             text-align: center;
         }
 
-        .d158302-function-button {
-            position: absolute;
-            border: none;
-            background: transparent;
-            padding: 0;
-            margin: 0;
-            font-family: "Courier New", Courier, monospace;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            color: #111;
+        .d158302-job-input {
+            width: 11ch;
         }
 
-            .d158302-function-button:hover {
-                text-decoration: underline;
-            }
-
-        .d158302-error {
-            position: absolute;
-            left: 10px;
-            top: 575px;
-            color: red;
-            white-space: pre;
+        .d158302-fa-input {
+            width: 3ch;
         }
 
-        .hidden-selection {
-            visibility: hidden;
+        .d158302-history-input {
+            width: 2ch;
+            text-align: center;
+        }
+
+        .d158302-selection-input {
+            width: 2ch;
+            text-align: center;
         }
     </style>
 </head>
 
 <body>
 
-    <form method="post"
-          id="d158302Form">
+    <div class="pcpm-screen">
 
-        <div class="d158302-screen">
+        <form method="post"
+              asp-page="/D158302"
+              id="pcpmForm"
+              class="pcpm-form">
 
-            <!-- ============================================================
+            <!-- =========================================================
                  HEADER
-                 ============================================================ -->
+                 ========================================================= -->
 
-            <span class="d158302-field"
-                  style="left:10px; top:25px;">
-                ACTION
-            </span>
+            <div class="pcpm-header-row">
 
-            <input name="Action"
-                   id="Action"
-                   value="@Model.Action"
-                   maxlength="3"
-                   autocomplete="off"
-                   autofocus
-                   class="d158302-input"
-                   style="left:90px; top:25px; width:34px;"
-                   oninput="this.value=this.value.toUpperCase();" />
+                <div class="pcpm-header-left">
 
-            <span class="d158302-field"
-                  style="left:200px; top:25px;">
-                ARDOT PRE-CONSTRUCTION PROJECT MONITORING
-            </span>
+                    ACTION
 
-            <span class="d158302-field"
-                  style="left:710px; top:25px;">
-                D158302
-            </span>
+                    <input asp-for="Action"
+                           class="pcpm-input pcpm-input-3"
+                           maxlength="3"
+                           autocomplete="off"
+                           oninput="this.value = this.value.toUpperCase();"
+                           autofocus />
 
-            <span class="d158302-field"
-                  style="left:10px; top:50px;">
-                SCREEN
-            </span>
-
-            <span class="d158302-field"
-                  style="left:90px; top:50px;">
-                302
-            </span>
-
-            <span class="d158302-field"
-                  style="left:250px; top:50px;">
-                INQUIRY FUNCTIONAL AREA STATUS
-            </span>
-
-            <span class="d158302-field"
-                  style="left:680px; top:50px;">
-                @Model.DisplayDate
-            </span>
-
-            <span class="d158302-field"
-                  style="left:10px; top:75px;">
-                =============================================================================
-            </span>
+                </div>
 
 
-            <!-- ============================================================
+                <div class="pcpm-header-center">
+                    ARDOT PRE-CONSTRUCTION PROJECT MONITORING
+                </div>
+
+
+                <div class="pcpm-header-right">
+                    D158302
+                </div>
+
+            </div>
+
+
+            <div class="pcpm-header-row">
+
+                <div class="pcpm-header-left">
+                    SCREEN&nbsp;&nbsp;302
+                </div>
+
+
+                <div class="pcpm-header-center">
+                    INQUIRY FUNCTIONAL AREA STATUS
+                </div>
+
+
+                <div class="pcpm-header-right">
+                    @Model.DisplayDate
+                </div>
+
+            </div>
+
+
+            <div class="pcpm-separator"></div>
+
+
+            <!-- =========================================================
                  JOB / FUNCTIONAL AREA
-                 ============================================================ -->
+                 ========================================================= -->
 
-            <span class="d158302-field"
-                  style="left:10px; top:100px;">
-                JOB NUMBER
-            </span>
+            <div class="d158302-job-row">
 
-            <input name="JobNumber"
-                   id="JobNumber"
-                   value="@Model.JobNumber"
-                   maxlength="10"
-                   readonly
-                   class="d158302-input d158302-readonly"
-                   style="left:130px; top:100px; width:90px;" />
+                <span>JOB NUMBER</span>
 
-            <span class="d158302-field"
-                  style="left:290px; top:100px;">
-                FA
-            </span>
-
-            <input name="FunctionalArea"
-                   id="FunctionalArea"
-                   value="@Model.FunctionalArea"
-                   maxlength="2"
-                   readonly
-                   class="d158302-input d158302-readonly"
-                   style="left:330px; top:100px; width:32px;" />
-
-            <span class="d158302-field"
-                  style="left:390px; top:100px;">
-                @Model.Screen.FunctionalAreaDescription
-            </span>
-
-            <span class="d158302-field"
-                  style="left:670px; top:100px;">
-                STATUS:
-            </span>
-
-            <span class="d158302-field"
-                  style="left:760px; top:100px;">
-                @Model.Screen.Status
-            </span>
+                <input asp-for="JobNumber"
+                       id="jobNumberInput"
+                       class="pcpm-input d158302-job-input"
+                       maxlength="10"
+                       autocomplete="off"
+                       oninput="this.value = this.value.toUpperCase();"
+                       readonly="@(Model.Screen?.ScreenReset == true ? null : "readonly")" />
 
 
-            <!-- ============================================================
-                 STATUS DATES
-                 ============================================================ -->
+                <span>FA</span>
 
-            <span class="d158302-field"
-                  style="left:270px; top:125px;">
+                <input asp-for="FunctionalArea"
+                       id="functionalAreaInput"
+                       class="pcpm-input d158302-fa-input"
+                       maxlength="2"
+                       autocomplete="off"
+                       oninput="this.value = this.value.toUpperCase();"
+                       readonly="@(Model.Screen?.ScreenReset == true ? null : "readonly")" />
+
+
+                <span>
+                    @Model.Screen.FunctionalAreaDescription
+                </span>
+
+
+                <span>STATUS:</span>
+
+                <span>
+                    @Model.Screen.Status
+                </span>
+
+            </div>
+
+
+            <!-- =========================================================
+                 STATUS / DATES
+                 ========================================================= -->
+
+            <div class="d158302-date-heading">
                 ------------------DATES--------------------
-            </span>
-
-            <span class="d158302-field"
-                  style="left:10px; top:150px;">
-                PERCENT COMPLETE
-            </span>
-
-            <span class="d158302-field"
-                  style="left:190px; top:150px;">
-                @Model.Screen.Percent
-            </span>
-
-            <span class="d158302-field"
-                  style="left:280px; top:150px;">
-                START
-            </span>
-
-            <span class="d158302-field"
-                  style="left:380px; top:150px;">
-                PROJ COM
-            </span>
-
-            <span class="d158302-field"
-                  style="left:490px; top:150px;">
-                COMPLETE
-            </span>
-
-            <span class="d158302-field"
-                  style="left:620px; top:150px;">
-                UPDATED
-            </span>
-
-            <span class="d158302-field"
-                  style="left:730px; top:150px;">
-                USR
-            </span>
-
-            <span class="d158302-field"
-                  style="left:270px; top:175px;">
-                @Model.Screen.StartDate
-            </span>
-
-            <span class="d158302-field"
-                  style="left:380px; top:175px;">
-                @Model.Screen.ProjectedEndDate
-            </span>
-
-            <span class="d158302-field"
-                  style="left:490px; top:175px;">
-                @Model.Screen.EndDate
-            </span>
-
-            <span class="d158302-field"
-                  style="left:600px; top:175px;">
-                @Model.Screen.LastUpdated
-            </span>
-
-            <span class="d158302-field"
-                  style="left:710px; top:175px;">
-                @Model.Screen.UserId
-            </span>
+            </div>
 
 
-            <!-- ============================================================
+            <div class="d158302-status-header">
+
+                <span>PERCENT COMPLETE</span>
+
+                <span class="d158302-center">
+                    START
+                </span>
+
+                <span class="d158302-center">
+                    PROJ COM
+                </span>
+
+                <span class="d158302-center">
+                    COMPLETE
+                </span>
+
+                <span class="d158302-center">
+                    UPDATED
+                </span>
+
+                <span class="d158302-center">
+                    USR
+                </span>
+
+            </div>
+
+
+            <div class="d158302-status-row">
+
+                <span>
+                    @Model.Screen.Percent
+                </span>
+
+                <span class="d158302-center">
+                    @Model.Screen.StartDate
+                </span>
+
+                <span class="d158302-center">
+                    @Model.Screen.ProjectedEndDate
+                </span>
+
+                <span class="d158302-center">
+                    @Model.Screen.EndDate
+                </span>
+
+                <span class="d158302-center">
+                    @Model.Screen.LastUpdated
+                </span>
+
+                <span class="d158302-center">
+                    @Model.Screen.UserId
+                </span>
+
+            </div>
+
+
+            <!-- =========================================================
                  HISTORY
-                 ============================================================ -->
+                 ========================================================= -->
 
-            <span class="d158302-field"
-                  style="left:10px; top:200px;">
-                HISTORY:
-            </span>
+            <div class="d158302-history-row">
 
-            <input name="History"
-                   id="History"
-                   value="@Model.History"
-                   maxlength="1"
-                   autocomplete="off"
-                   class="d158302-input"
-                   style="left:110px; top:200px; width:26px;"
-                   oninput="this.value=this.value.toUpperCase();" />
+                <span>HISTORY:</span>
+
+                <input asp-for="History"
+                       id="historyInput"
+                       class="pcpm-input pcpm-input-1 d158302-history-input"
+                       maxlength="1"
+                       autocomplete="off"
+                       oninput="this.value = this.value.toUpperCase();" />
+
+            </div>
 
 
-            <!-- ============================================================
-                 REMARK WORK AREA
-                 ============================================================ -->
+            <!-- =========================================================
+                 REMARKS WORK AREA
+                 ========================================================= -->
 
-            <span class="d158302-field"
-                  style="left:300px; top:225px;">
+            <div class="d158302-remarks-title">
                 REMARKS WORK AREA
-            </span>
-
-            <span class="d158302-field"
-                  style="left:10px; top:250px;">
-                SEL
-            </span>
-
-            <span class="d158302-field"
-                  style="left:140px; top:250px;">
-                REMARKS:
-            </span>
-
-            <span class="d158302-field"
-                  style="left:600px; top:250px;">
-                DATE
-            </span>
-
-            <span class="d158302-field"
-                  style="left:690px; top:250px;">
-                TP
-            </span>
-
-            <span class="d158302-field"
-                  style="left:720px; top:250px;">
-                SF
-            </span>
-
-            <span class="d158302-field"
-                  style="left:760px; top:250px;">
-                DF
-            </span>
+            </div>
 
 
-            @for (var i = 0; i < Model.Screen.Remarks.Count; i++)
+            <div class="d158302-remark-header">
+
+                <span>SEL</span>
+
+                <span class="d158302-center">
+                    REMARKS:
+                </span>
+
+                <span class="d158302-center">
+                    DATE
+                </span>
+
+                <span class="d158302-center">
+                    TP
+                </span>
+
+                <span class="d158302-center">
+                    SF
+                </span>
+
+                <span class="d158302-center">
+                    DF
+                </span>
+
+            </div>
+
+
+            <!-- =========================================================
+                 FIVE REMARK ROWS
+                 ========================================================= -->
+
+            @for (var i = 0; i < 5; i++)
             {
-                var row = Model.Screen.Remarks[i];
-                var top = 275 + (i * 25);
+                var hasRemark =
+                    Model.Screen.Remarks != null &&
+                    i < Model.Screen.Remarks.Count;
 
-                if (row.CanSelect)
+                var selectionValue =
+                    Model.Selections != null &&
+                    i < Model.Selections.Count
+                        ? Model.Selections[i]
+                        : "";
+
+                <div class="d158302-remark-row">
+
+                    @if (hasRemark &&
+                         Model.Screen.Remarks[i].CanSelect)
+                    {
+                        <input name="Selections[@i]"
+                               value="@selectionValue"
+                               maxlength="1"
+                               autocomplete="off"
+                               class="pcpm-input pcpm-input-1 selection-field d158302-selection-input"
+                               oninput="this.value = this.value.toUpperCase();" />
+                    }
+                    else
+                    {
+                        /*
+                         * Preserve all five list positions for model binding,
+                         * but do not draw a disabled white textbox.
+                         */
+                        <input type="hidden"
+                               name="Selections[@i]"
+                               value="@selectionValue" />
+
+                        <span class="d158302-selection-space"></span>
+                    }
+
+
+                    @if (hasRemark)
+                    {
+                        <span class="d158302-remark-text">
+                            @Model.Screen.Remarks[i].Remark
+                        </span>
+
+                        <span class="d158302-center">
+                            @Model.Screen.Remarks[i].LastUpdated
+                        </span>
+
+                        <span class="d158302-center">
+                            @Model.Screen.Remarks[i].RemarkType
+                        </span>
+
+                        <span class="d158302-center">
+                            @Model.Screen.Remarks[i].StatusFlag
+                        </span>
+
+                        <span class="d158302-center">
+                            @Model.Screen.Remarks[i].DeleteFlag
+                        </span>
+                    }
+                    else
+                    {
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    }
+
+                </div>
+            }
+
+
+            <!-- =========================================================
+                 INSTRUCTION
+                 ========================================================= -->
+
+            <div class="d158302-instruction">
+                ENTER 'A' 'D' OR 'U' IN THE SELECTION FIELD TO ACCESS THE DESIRED FUNCTION
+            </div>
+
+
+            <!-- =========================================================
+                 LATEST REMARK
+                 ========================================================= -->
+
+            <div class="d158302-latest-heading">
+
+                <span>
+                    LATEST REMARK MADE BY
+                </span>
+
+                <span>
+                    @Model.Screen.LatestRemarkFunctionalArea
+                </span>
+
+                <span>
+                    @Model.Screen.LatestRemarkUserId
+                </span>
+
+            </div>
+
+
+            <div class="d158302-latest-row">
+
+                @if (Model.Screen.LatestRemarkCanSelect)
                 {
-                    <input name="Selections[@i]"
-                           value="@Model.Selections[i]"
+                    <input asp-for="LatestSelection"
+                           class="pcpm-input pcpm-input-1 selection-field d158302-selection-input"
                            maxlength="1"
                            autocomplete="off"
-                           class="d158302-input d158302-selection"
-                           style="left:20px; top:@(top)px;"
-                           oninput="this.value=this.value.toUpperCase();" />
+                           oninput="this.value = this.value.toUpperCase();" />
                 }
                 else
                 {
                     <input type="hidden"
-                           name="Selections[@i]"
-                           value="@Model.Selections[i]" />
+                           asp-for="LatestSelection" />
 
-                    <input value=""
-                           disabled
-                           class="d158302-input d158302-selection hidden-selection"
-                           style="left:20px; top:@(top)px;" />
+                    <span class="d158302-selection-space"></span>
                 }
 
-                <span class="d158302-field"
-                      style="left:50px; top:@(top)px;">
-                    @row.Remark
+
+                <span class="d158302-remark-text">
+                    @Model.Screen.LatestRemark
                 </span>
 
-                <span class="d158302-field"
-                      style="left:570px; top:@(top)px;">
-                    @row.LastUpdated
+
+                <span class="d158302-center">
+                    @Model.Screen.LatestRemarkLastUpdated
                 </span>
 
-                <span class="d158302-field"
-                      style="left:680px; top:@(top)px;">
-                    @row.RemarkType
+
+                <span class="d158302-center">
+                    @Model.Screen.LatestRemarkType
                 </span>
 
-                <span class="d158302-field"
-                      style="left:720px; top:@(top)px;">
-                    @row.StatusFlag
+
+                <span class="d158302-center">
+                    @Model.Screen.LatestRemarkStatusFlag
                 </span>
 
-                <span class="d158302-field"
-                      style="left:760px; top:@(top)px;">
-                    @row.DeleteFlag
+
+                <span class="d158302-center">
+                    @Model.Screen.LatestRemarkDeleteFlag
                 </span>
-            }
+
+            </div>
 
 
-            <!-- ============================================================
-                 INSTRUCTION
-                 ============================================================ -->
-
-            <span class="d158302-field"
-                  style="left:20px; top:400px;">
-                ENTER 'A' 'D' OR 'U' IN THE SELECTION FIELD TO ACCESS THE DESIRED FUNCTION
-            </span>
+            <div class="pcpm-separator"></div>
 
 
-            <!-- ============================================================
-                 LATEST REMARK
-                 ============================================================ -->
-
-            <span class="d158302-field"
-                  style="left:150px; top:450px;">
-                LATEST REMARK MADE BY
-            </span>
-
-            <span class="d158302-field"
-                  style="left:380px; top:450px;">
-                @Model.Screen.LatestRemarkFunctionalArea
-            </span>
-
-            <span class="d158302-field"
-                  style="left:420px; top:450px;">
-                @Model.Screen.LatestRemarkUserId
-            </span>
-
-
-            @if (Model.Screen.LatestRemarkCanSelect)
-            {
-                <input name="LatestSelection"
-                       value="@Model.LatestSelection"
-                       maxlength="1"
-                       autocomplete="off"
-                       class="d158302-input d158302-selection"
-                       style="left:20px; top:500px;"
-                       oninput="this.value=this.value.toUpperCase();" />
-            }
-            else
-            {
-                <input type="hidden"
-                       name="LatestSelection"
-                       value="@Model.LatestSelection" />
-
-                <input value=""
-                       disabled
-                       class="d158302-input d158302-selection hidden-selection"
-                       style="left:20px; top:500px;" />
-            }
-
-            <span class="d158302-field"
-                  style="left:50px; top:500px;">
-                @Model.Screen.LatestRemark
-            </span>
-
-            <span class="d158302-field"
-                  style="left:570px; top:500px;">
-                @Model.Screen.LatestRemarkLastUpdated
-            </span>
-
-            <span class="d158302-field"
-                  style="left:680px; top:500px;">
-                @Model.Screen.LatestRemarkType
-            </span>
-
-            <span class="d158302-field"
-                  style="left:720px; top:500px;">
-                @Model.Screen.LatestRemarkStatusFlag
-            </span>
-
-            <span class="d158302-field"
-                  style="left:770px; top:500px;">
-                @Model.Screen.LatestRemarkDeleteFlag
-            </span>
-
-
-            <!-- ============================================================
-                 SEPARATOR
-                 ============================================================ -->
-
-            <span class="d158302-field"
-                  style="left:10px; top:525px;">
-                -----------------------------------------------------------------------------
-            </span>
-
-
-            <!-- ============================================================
+            <!-- =========================================================
                  FUNCTION KEYS
-                 ============================================================ -->
+                 ========================================================= -->
+
+            <div class="pcpm-function-keys">
+
+                <button type="submit"
+                        asp-page-handler="Help"
+                        id="helpButton"
+                        class="pcpm-function-button">
+                    F1=HELP
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="Previous"
+                        id="previousButton"
+                        class="pcpm-function-button">
+                    F3=PREV
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="ScrollLeft"
+                        id="scrollLeftButton"
+                        class="pcpm-function-button">
+                    F4=SCRLB
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="ScrollRight"
+                        id="scrollRightButton"
+                        class="pcpm-function-button">
+                    F5=SCRLF
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="Reset"
+                        id="resetButton"
+                        class="pcpm-function-button">
+                    F6=RESET
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="Backward"
+                        id="backwardButton"
+                        class="pcpm-function-button">
+                    F7=BKWRD
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="Forward"
+                        id="forwardButton"
+                        class="pcpm-function-button">
+                    F8=FRWRD
+                </button>
+
+
+                <button type="submit"
+                        asp-page-handler="MainMenu"
+                        id="mainMenuButton"
+                        class="pcpm-function-button">
+                    F12=MAIN
+                </button>
+
+            </div>
+
+
+            <!-- =========================================================
+                 ERROR / INFORMATION MESSAGE
+                 ========================================================= -->
+
+            <div class="pcpm-error">
+                @Model.ErrorMessage
+            </div>
+
+
+            <!-- =========================================================
+                 ENTER
+                 ========================================================= -->
 
             <button type="submit"
-                    asp-page-handler="Help"
-                    id="helpButton"
-                    class="d158302-function-button"
-                    style="left:10px; top:550px;">
-                F1=HELP
+                    id="enterButton"
+                    class="pcpm-hidden-submit">
             </button>
 
-            <button type="submit"
-                    asp-page-handler="Previous"
-                    id="previousButton"
-                    class="d158302-function-button"
-                    style="left:100px; top:550px;">
-                F3=PREV
-            </button>
+        </form>
 
-            <button type="submit"
-                    asp-page-handler="ScrollLeft"
-                    id="scrollLeftButton"
-                    class="d158302-function-button"
-                    style="left:190px; top:550px;">
-                F4=SCRLB
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="ScrollRight"
-                    id="scrollRightButton"
-                    class="d158302-function-button"
-                    style="left:290px; top:550px;">
-                F5=SCRLF
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="Reset"
-                    id="resetButton"
-                    class="d158302-function-button"
-                    style="left:390px; top:550px;">
-                F6=RESET
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="Backward"
-                    id="backwardButton"
-                    class="d158302-function-button"
-                    style="left:490px; top:550px;">
-                F7=BKWRD
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="Forward"
-                    id="forwardButton"
-                    class="d158302-function-button"
-                    style="left:590px; top:550px;">
-                F8=FRWRD
-            </button>
-
-            <button type="submit"
-                    asp-page-handler="MainMenu"
-                    id="mainMenuButton"
-                    class="d158302-function-button"
-                    style="left:690px; top:550px;">
-                F12=MAIN
-            </button>
-
-
-            <!-- ============================================================
-                 ERROR MESSAGE
-                 ============================================================ -->
-            @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-            {
-                <span class="d158302-error">
-                    @Model.ErrorMessage
-                </span>
-            }
-
-        </div>
-
-    </form>
+    </div>
 
 
     <script>
-        document.addEventListener("keydown", function (event) {
+        (() => {
 
-            let button = null;
+            /*
+             * Uppercase the legacy terminal-entry fields.
+             */
+            document.querySelectorAll(
+                ".selection-field, .pcpm-input"
+            ).forEach(input => {
 
-            switch (event.key) {
-                case "F1":
-                    button = document.getElementById("helpButton");
-                    break;
+                input.addEventListener(
+                    "input",
+                    function () {
 
-                case "F3":
-                    button = document.getElementById("previousButton");
-                    break;
+                        this.value =
+                            this.value.toUpperCase();
 
-                case "F4":
-                    button = document.getElementById("scrollLeftButton");
-                    break;
+                    });
 
-                case "F5":
-                    button = document.getElementById("scrollRightButton");
-                    break;
+            });
 
-                case "F6":
-                    button = document.getElementById("resetButton");
-                    break;
 
-                case "F7":
-                    button = document.getElementById("backwardButton");
-                    break;
+            /*
+             * Physical PF keys / Enter.
+             */
+            document.addEventListener(
+                "keydown",
+                function (event) {
 
-                case "F8":
-                    button = document.getElementById("forwardButton");
-                    break;
+                    let id = null;
 
-                case "F12":
-                    button = document.getElementById("mainMenuButton");
-                    break;
+
+                    switch (event.key) {
+
+                        case "Enter":
+                            id = "enterButton";
+                            break;
+
+                        case "F1":
+                            id = "helpButton";
+                            break;
+
+                        case "F3":
+                            id = "previousButton";
+                            break;
+
+                        case "F4":
+                            id = "scrollLeftButton";
+                            break;
+
+                        case "F5":
+                            id = "scrollRightButton";
+                            break;
+
+                        case "F6":
+                            id = "resetButton";
+                            break;
+
+                        case "F7":
+                            id = "backwardButton";
+                            break;
+
+                        case "F8":
+                            id = "forwardButton";
+                            break;
+
+                        case "F12":
+                            id = "mainMenuButton";
+                            break;
+                    }
+
+
+                    if (!id)
+                        return;
+
+
+                    event.preventDefault();
+
+
+                    const button =
+                        document.getElementById(id);
+
+
+                    if (button)
+                        button.click();
+
+                });
+
+
+            /*
+             * Legacy F6 behavior:
+             * after Reset, JOB NUMBER and FA become editable.
+             * Put focus back on JOB NUMBER.
+             */
+            const jobNumber =
+                document.getElementById(
+                    "jobNumberInput");
+
+
+            if (jobNumber &&
+                !jobNumber.hasAttribute("readonly")) {
+
+                jobNumber.focus();
+
             }
 
-            if (button) {
-                event.preventDefault();
-                button.click();
-            }
-        });
+        })();
     </script>
 
 </body>
