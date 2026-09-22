@@ -1,21 +1,7 @@
-Hi Team,
+Please see the implementation and rollback/backout steps below.
 
-As discussed in today’s meeting, we would like to request a one-time ad hoc file run.
+Implementation Steps:
+We will run a one-time Python script to populate the missing fields in GCP Firestore. Prior to running the script, we will take a backup/export of the Firestore data. Once the backup is successfully completed, we will execute the Python script to load the required fields and validate the data after the load.
 
-For this one-time file, please use the following date range:
-
-* Start Date: September 1, 1900
-* End Date: Current date and time at the time the file is generated
-
-We would like to receive the one-time file on Friday, October 2, 2026, in the afternoon, as we are planning to load the file on Saturday morning, October 3, 2026.
-
-For this one-time file, we only need the following three fields:
-
-* Employee ID
-* IDH Column A
-* IDH Column B
-
-Please let me know if you need any additional details or information from our side.
-
-Thank you,
-[Your Name]
+Rollback/Backout Steps:
+If any issues are identified during or after the implementation, we will use the Firestore backup taken prior to the change to restore the data to its pre-implementation state.
