@@ -1,10 +1,1 @@
-for s in $(gcloud run services list \
-  --project=gcp-emp-ep-uat \
-  --region=us-central1 \
-  --format="value(metadata.name)"); do
-  echo "Checking $s"
-  gcloud run services describe "$s" \
-    --project=gcp-emp-ep-uat \
-    --region=us-central1 \
-    --format=yaml | grep -i "gcp-emp-ep-uat-nodes"
-done
+I checked gcp-emp-ep-uat and gcp-emp-ep-prod and confirmed that we are not using the subnets/resources Wei mentioned. From our side, there are no active dependencies and we are good to proceed.
