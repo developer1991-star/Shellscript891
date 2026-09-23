@@ -1,1 +1,27 @@
-I checked gcp-emp-ep-uat and gcp-emp-ep-prod and confirmed that we are not using the subnets/resources Wei mentioned. From our side, there are no active dependencies and we are good to proceed.
+EPAE Release Notes – Firestore Data Load
+
+Purpose:
+Populate the missing Firestore fields required by GTS as part of the effort to sunset the GEMS stored procedure.
+
+Fields being populated:
+
+* terminationReasonCode
+* employeeJobDotQualifier
+
+Implementation:
+A one-time Python script will be executed to identify the applicable Firestore documents and populate the missing fields.
+
+Pre-Deployment:
+A backup/export of the GCP Firestore data will be taken before running the script.
+
+Validation:
+After the script completes, the updated Firestore records will be validated to confirm that the required fields were populated correctly.
+
+Rollback / Backout:
+If any issue is identified during or after the data load, the Firestore backup taken before implementation will be used to restore the data to its previous state.
+
+Application Impact:
+No application code deployment is involved. This is a one-time Firestore data update.
+
+Expected Downtime:
+No downtime is expected.
