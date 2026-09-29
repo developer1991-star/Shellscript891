@@ -1,7 +1,1 @@
-Please see the implementation and rollback/backout steps below.
-
-Implementation Steps:
-We will run a one-time Python script to populate the missing fields in GCP Firestore. Prior to running the script, we will take a backup/export of the Firestore data. Once the backup is successfully completed, we will execute the Python script to load the required fields and validate the data after the load.
-
-Rollback/Backout Steps:
-If any issues are identified during or after the implementation, we will use the Firestore backup taken prior to the change to restore the data to its pre-implementation state.
+The package failure has been traced to JOB_CLS_CD_DSC_TE in the HRDM SP to TempHRDMSP data flow. SSIS expects a 30-character non-Unicode string, and the incoming value caused a truncation/code-page error. We need to verify the current source value and determine whether the source data or SSIS column metadata needs adjustment.
