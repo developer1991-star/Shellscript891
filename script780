@@ -1,1 +1,1 @@
-The package failed at the HRDM SP to TempHRDMSP step. The issue is with the JOB_CLS_CD_DSC_TE column, where SSIS expects a maximum of 30 characters and the incoming value caused a truncation or character-format error.
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\Users\<you>\Downloads\gcp-service-account.json"))
