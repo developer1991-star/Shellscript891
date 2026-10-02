@@ -1,4 +1,11 @@
-gcloud beta policy-intelligence troubleshoot-policy iam \
-  //run.googleapis.com/projects/gcp-cti-ucs-dev/locations/us-east4/services/charity-system-api-dev \
-  --principal-email=YOUR_EMAIL \
-  --permission=run.services.update
+Post-Deployment Failure Summary
+
+After deployment, four errors were observed during SSIS package execution. Two errors were related to the EWD file extraction/processing, and two were component version mismatch errors.
+
+The package contains a Script Task that handles the EWD file logic, including identifying, downloading, and extracting the EWD file. During deployment preparation, we opened this Script Task, added the required DLL references, and rebuilt the SSIS solution.
+
+Although the EWD processing code itself was not changed, rebuilding the solution caused the Script Task to be recompiled using the SSIS/VSTA components installed in the current Visual Studio 2022 environment.
+
+Based on the errors seen after deployment, it is suspected that the Script Task or package components were recompiled using a different or incompatible component version compared with the previously working Production build. Since the EWD processing logic is contained within this Script Task, this compatibility difference may have contributed to the EWD-related failures.
+
+The additional ComponentVersionMismatchException errors also support the possibility that the rebuilt package contains component metadata or compiled components that differ from the previous Production version.
