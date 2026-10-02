@@ -1,5 +1,710 @@
-gcloud iam service-accounts add-iam-policy-binding \
-  sa-cti-ucs-dev-cloudrun@gcp-cti-ucs-dev.iam.gserviceaccount.com \
-  --member="serviceAccount:sa-cti-ucs-dev-cloudrun@gcp-cti-ucs-dev.iam.gserviceaccount.com" \
-  --role="roles/iam.serviceAccountUser" \
-  --project=gcp-cti-ucs-dev
+#!/usr/bin/env python3
+
+import csv
+import sys
+from datetime import datetime
+from pathlib import Path
+
+from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+PROJECT_ID = "your-gcp-project-id"
+
+COLLECTION_NAME = "your-firestore-collection"
+
+INPUT_FILE_NAME = "employee_updates.csv"
+
+NOT_FOUND_FILE_NAME = "employees_not_found.txt"
+
+ERROR_FILE_NAME = "errors.txt"
+
+DELIMITER = "~"
+
+
+# ============================================================
+# FIRESTORE FIELD NAMES
+# ============================================================
+
+EMPLOYEE_ID_FIELD = "employeeID"
+
+TERMINATION_REASON_FIELD = "terminationReasonCode"
+
+JOB_QUALIFIER_FIELD = "employeeJobDotQualifier"
+
+
+# ============================================================
+# PROGRESS
+# ============================================================
+
+def show_progress(current, total):
+
+    percentage = (
+        (current / total) * 100
+        if total
+        else 100
+    )
+
+    bar_length = 40
+
+    filled_length = (
+        int(bar_length * current / total)
+        if total
+        else bar_length
+    )
+
+    bar = (
+        "#" * filled_length
+        + "-" * (bar_length - filled_length)
+    )
+
+    print(
+        f"\rProgress: [{bar}] "
+        f"{percentage:6.2f}% "
+        f"({current}/{total})",
+        end="",
+        flush=True
+    )
+
+
+# ============================================================
+# VALID RECORD CHECK
+# ============================================================
+
+def is_valid_record(row):
+
+    if not row:
+        return False
+
+    if all(not column.strip() for column in row):
+        return False
+
+    employee_id = row[0].strip()
+
+    if not employee_id:
+        return False
+
+    # Header
+    if employee_id.lower() == "employeeid":
+        return False
+
+    # Existing special record
+    if employee_id == "empty_record":
+        return False
+
+    # Trailer
+    if employee_id[:3].upper() == "TRL":
+        return False
+
+    return True
+
+
+# ============================================================
+# COUNT INPUT RECORDS
+# ============================================================
+
+def count_records(file_path):
+
+    count = 0
+
+    with open(
+        file_path,
+        "r",
+        encoding="utf-8-sig",
+        newline=""
+    ) as csv_file:
+
+        reader = csv.reader(
+            csv_file,
+            delimiter=DELIMITER
+        )
+
+        for row in reader:
+
+            if is_valid_record(row):
+                count += 1
+
+    return count
+
+
+# ============================================================
+# ERROR LOG HELPER
+# ============================================================
+
+def write_error(
+    error_file,
+    error_number,
+    issue_type,
+    line_number,
+    employee_id="UNKNOWN",
+    message="",
+    raw_row=None
+):
+
+    error_id = f"ERR-{error_number:06d}"
+
+    timestamp = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+
+    error_file.write(
+        "=" * 70 + "\n"
+    )
+
+    error_file.write(
+        f"Error ID    : {error_id}\n"
+    )
+
+    error_file.write(
+        f"Timestamp   : {timestamp}\n"
+    )
+
+    error_file.write(
+        f"Issue Type  : {issue_type}\n"
+    )
+
+    error_file.write(
+        f"CSV Line    : {line_number}\n"
+    )
+
+    error_file.write(
+        f"Employee ID : {employee_id}\n"
+    )
+
+    if raw_row is not None:
+
+        error_file.write(
+            f"Raw Row     : {raw_row}\n"
+        )
+
+    if message:
+
+        error_file.write(
+            f"Details     : {message}\n"
+        )
+
+    error_file.write(
+        "=" * 70 + "\n\n"
+    )
+
+    # Immediately write data to disk
+    error_file.flush()
+
+    return error_id
+
+
+# ============================================================
+# MAIN PROCESS
+# ============================================================
+
+def update_employees():
+
+    home_directory = Path.home()
+
+    input_file_path = (
+        home_directory / INPUT_FILE_NAME
+    )
+
+    not_found_file_path = (
+        home_directory / NOT_FOUND_FILE_NAME
+    )
+
+    error_file_path = (
+        home_directory / ERROR_FILE_NAME
+    )
+
+    # --------------------------------------------------------
+    # Check input file
+    # --------------------------------------------------------
+
+    if not input_file_path.exists():
+
+        print()
+        print(
+            f"ERROR: Input file not found: "
+            f"{input_file_path}"
+        )
+
+        sys.exit(1)
+
+    # --------------------------------------------------------
+    # Display configuration
+    # --------------------------------------------------------
+
+    print()
+    print("=" * 70)
+    print("EMPLOYEE FIRESTORE UPDATE")
+    print("=" * 70)
+
+    print(
+        f"Project ID      : {PROJECT_ID}"
+    )
+
+    print(
+        f"Collection      : {COLLECTION_NAME}"
+    )
+
+    print(
+        f"Input file      : {input_file_path}"
+    )
+
+    print(
+        f"Not-found file  : {not_found_file_path}"
+    )
+
+    print(
+        f"Error file      : {error_file_path}"
+    )
+
+    print(
+        f"Delimiter       : {repr(DELIMITER)}"
+    )
+
+    print("=" * 70)
+    print()
+
+    # --------------------------------------------------------
+    # Connect to Firestore
+    # --------------------------------------------------------
+
+    print("Connecting to Firestore...")
+
+    try:
+
+        db = firestore.Client(
+            project=PROJECT_ID
+        )
+
+        collection_ref = db.collection(
+            COLLECTION_NAME
+        )
+
+    except Exception as error:
+
+        print(
+            f"Unable to connect to Firestore: "
+            f"{error}"
+        )
+
+        sys.exit(1)
+
+    print("Connected successfully.")
+    print()
+
+    # --------------------------------------------------------
+    # Count records
+    # --------------------------------------------------------
+
+    print("Counting input records...")
+
+    total_records = count_records(
+        input_file_path
+    )
+
+    print(
+        f"Total employee records to process: "
+        f"{total_records}"
+    )
+
+    print()
+
+    if total_records == 0:
+
+        print(
+            "No employee records found."
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Counters
+    # --------------------------------------------------------
+
+    processed_records = 0
+
+    updated_employees = 0
+
+    updated_documents = 0
+
+    not_found_records = 0
+
+    malformed_records = 0
+
+    processing_errors = 0
+
+    duplicate_employee_records = 0
+
+    error_number = 0
+
+    not_found_employee_ids = []
+
+    # --------------------------------------------------------
+    # Both files use "w"
+    #
+    # Therefore old contents are replaced every run.
+    # --------------------------------------------------------
+
+    with open(
+        error_file_path,
+        "w",
+        encoding="utf-8"
+    ) as error_file:
+
+        # Write error file header
+        error_file.write(
+            "EMPLOYEE FIRESTORE UPDATE ERROR LOG\n"
+        )
+
+        error_file.write(
+            f"Run started : "
+            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+
+        error_file.write(
+            f"Input file  : {input_file_path}\n"
+        )
+
+        error_file.write(
+            f"Project     : {PROJECT_ID}\n"
+        )
+
+        error_file.write(
+            f"Collection  : {COLLECTION_NAME}\n\n"
+        )
+
+        print(
+            "Starting Firestore updates..."
+        )
+
+        print()
+
+        show_progress(
+            0,
+            total_records
+        )
+
+        # ====================================================
+        # PROCESS CSV
+        # ====================================================
+
+        with open(
+            input_file_path,
+            "r",
+            encoding="utf-8-sig",
+            newline=""
+        ) as csv_file:
+
+            reader = csv.reader(
+                csv_file,
+                delimiter=DELIMITER
+            )
+
+            for line_number, row in enumerate(
+                reader,
+                start=1
+            ):
+
+                if not is_valid_record(row):
+                    continue
+
+                processed_records += 1
+
+                # ============================================
+                # MALFORMED RECORD
+                # ============================================
+
+                if len(row) < 3:
+
+                    malformed_records += 1
+
+                    error_number += 1
+
+                    employee_id = (
+                        row[0].strip()
+                        if len(row) > 0
+                        else "UNKNOWN"
+                    )
+
+                    write_error(
+                        error_file=error_file,
+                        error_number=error_number,
+                        issue_type="MALFORMED RECORD",
+                        line_number=line_number,
+                        employee_id=employee_id,
+                        message=(
+                            "Expected 3 columns but "
+                            f"found {len(row)}."
+                        ),
+                        raw_row=row
+                    )
+
+                    show_progress(
+                        processed_records,
+                        total_records
+                    )
+
+                    continue
+
+                # ============================================
+                # READ VALUES
+                # ============================================
+
+                employee_id = (
+                    row[0].strip()
+                )
+
+                termination_reason_code = (
+                    row[1].strip()
+                )
+
+                employee_job_dot_qualifier = (
+                    row[2].strip()
+                )
+
+                try:
+
+                    # ========================================
+                    # SEARCH FIRESTORE
+                    # ========================================
+
+                    query = collection_ref.where(
+                        filter=FieldFilter(
+                            EMPLOYEE_ID_FIELD,
+                            "==",
+                            employee_id
+                        )
+                    )
+
+                    matching_documents = list(
+                        query.stream()
+                    )
+
+                    # ========================================
+                    # EMPLOYEE NOT FOUND
+                    # ========================================
+
+                    if not matching_documents:
+
+                        not_found_records += 1
+
+                        not_found_employee_ids.append(
+                            employee_id
+                        )
+
+                    else:
+
+                        # ====================================
+                        # MULTIPLE FIRESTORE RECORDS
+                        # ====================================
+
+                        if len(
+                            matching_documents
+                        ) > 1:
+
+                            duplicate_employee_records += 1
+
+                            error_number += 1
+
+                            document_paths = [
+                                document.reference.path
+                                for document
+                                in matching_documents
+                            ]
+
+                            write_error(
+                                error_file=error_file,
+                                error_number=error_number,
+                                issue_type=(
+                                    "MULTIPLE FIRESTORE "
+                                    "MATCHES"
+                                ),
+                                line_number=line_number,
+                                employee_id=employee_id,
+                                message=(
+                                    f"Found "
+                                    f"{len(matching_documents)} "
+                                    "Firestore documents. "
+                                    f"Documents: "
+                                    f"{document_paths}"
+                                ),
+                                raw_row=row
+                            )
+
+                        # ====================================
+                        # UPDATE ONLY TWO FIELDS
+                        # ====================================
+
+                        update_data = {
+
+                            TERMINATION_REASON_FIELD:
+                                termination_reason_code,
+
+                            JOB_QUALIFIER_FIELD:
+                                employee_job_dot_qualifier
+                        }
+
+                        for document in (
+                            matching_documents
+                        ):
+
+                            document.reference.update(
+                                update_data
+                            )
+
+                            updated_documents += 1
+
+                        updated_employees += 1
+
+                # ============================================
+                # FIRESTORE / PROCESSING ERROR
+                # ============================================
+
+                except Exception as error:
+
+                    processing_errors += 1
+
+                    error_number += 1
+
+                    write_error(
+                        error_file=error_file,
+                        error_number=error_number,
+                        issue_type=(
+                            "PROCESSING / "
+                            "FIRESTORE ERROR"
+                        ),
+                        line_number=line_number,
+                        employee_id=employee_id,
+                        message=(
+                            f"{type(error).__name__}: "
+                            f"{str(error)}"
+                        ),
+                        raw_row=row
+                    )
+
+                # ============================================
+                # PROGRESS
+                # ============================================
+
+                show_progress(
+                    processed_records,
+                    total_records
+                )
+
+        # ----------------------------------------------------
+        # Write end timestamp to error file
+        # ----------------------------------------------------
+
+        error_file.write(
+            "\n"
+        )
+
+        error_file.write(
+            f"Run completed : "
+            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+
+        error_file.write(
+            f"Malformed records : "
+            f"{malformed_records}\n"
+        )
+
+        error_file.write(
+            f"Processing errors : "
+            f"{processing_errors}\n"
+        )
+
+        error_file.write(
+            f"Multiple matches  : "
+            f"{duplicate_employee_records}\n"
+        )
+
+    # ========================================================
+    # WRITE NOT-FOUND FILE
+    # ========================================================
+
+    with open(
+        not_found_file_path,
+        "w",
+        encoding="utf-8"
+    ) as not_found_file:
+
+        for employee_id in (
+            not_found_employee_ids
+        ):
+
+            not_found_file.write(
+                employee_id + "\n"
+            )
+
+    # ========================================================
+    # FINAL SUMMARY
+    # ========================================================
+
+    print()
+    print()
+
+    print("=" * 70)
+    print("PROCESSING COMPLETE")
+    print("=" * 70)
+
+    print(
+        f"Total records           : "
+        f"{total_records}"
+    )
+
+    print(
+        f"Successfully processed  : "
+        f"{updated_employees}"
+    )
+
+    print(
+        f"Firestore docs updated  : "
+        f"{updated_documents}"
+    )
+
+    print(
+        f"Employees not found     : "
+        f"{not_found_records}"
+    )
+
+    print(
+        f"Malformed records       : "
+        f"{malformed_records}"
+    )
+
+    print(
+        f"Processing errors       : "
+        f"{processing_errors}"
+    )
+
+    print(
+        f"Multiple matches        : "
+        f"{duplicate_employee_records}"
+    )
+
+    print()
+
+    print(
+        f"Not-found file          : "
+        f"{not_found_file_path}"
+    )
+
+    print(
+        f"Error details file      : "
+        f"{error_file_path}"
+    )
+
+    print("=" * 70)
+    print()
+
+
+# ============================================================
+# START PROGRAM
+# ============================================================
+
+if __name__ == "__main__":
+    update_employees()
