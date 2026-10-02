@@ -1,11 +1,1064 @@
-Post-Deployment Failure Summary
+#!/usr/bin/env python3
 
-After deployment, four errors were observed during SSIS package execution. Two errors were related to the EWD file extraction/processing, and two were component version mismatch errors.
+import csv
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
 
-The package contains a Script Task that handles the EWD file logic, including identifying, downloading, and extracting the EWD file. During deployment preparation, we opened this Script Task, added the required DLL references, and rebuilt the SSIS solution.
+from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
-Although the EWD processing code itself was not changed, rebuilding the solution caused the Script Task to be recompiled using the SSIS/VSTA components installed in the current Visual Studio 2022 environment.
 
-Based on the errors seen after deployment, it is suspected that the Script Task or package components were recompiled using a different or incompatible component version compared with the previously working Production build. Since the EWD processing logic is contained within this Script Task, this compatibility difference may have contributed to the EWD-related failures.
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-The additional ComponentVersionMismatchException errors also support the possibility that the rebuilt package contains component metadata or compiled components that differ from the previous Production version.
+PROJECT_ID = "gcp-emp-ep-uat"
+
+COLLECTION_NAME = "Employees"
+
+# File must be in your Cloud Shell home directory
+INPUT_FILE_NAME = "IDH_20260918.txt"
+
+DELIMITER = "~"
+
+# Output files
+NOT_FOUND_FILE_NAME = "employees_not_found.txt"
+ERROR_FILE_NAME = "errors.txt"
+RETRY_FILE_NAME = "retry_employees.txt"
+
+# Firestore batch size
+BATCH_SIZE = 500
+
+# Simple retry settings
+LOOKUP_RETRIES = 6
+WRITE_RETRIES = 5
+
+RETRY_WAIT_SECONDS = 3
+
+
+# ============================================================
+# FIRESTORE FIELD NAMES
+# ============================================================
+
+EMPLOYEE_ID_FIELD = "employeeID"
+
+TERMINATION_REASON_FIELD = "terminationReasonCode"
+
+JOB_QUALIFIER_FIELD = "employeeJobDotQualifier"
+
+
+# ============================================================
+# IGNORE HEADER / TRAILER / BLANK ROWS
+# ============================================================
+
+def is_ignored_row(row):
+
+    if not row:
+        return True
+
+    if all(
+        not value.strip()
+        for value in row
+    ):
+        return True
+
+    employee_id = row[0].strip()
+
+    # Header
+    if employee_id.lower() == "employeeid":
+        return True
+
+    # Existing special record
+    if employee_id == "empty_record":
+        return True
+
+    # Trailer
+    if employee_id.upper().startswith("TRL"):
+        return True
+
+    return False
+
+
+# ============================================================
+# FIRST PASS
+#
+# Count records and identify duplicate employee IDs.
+# ============================================================
+
+def inspect_input(file_path):
+
+    total_records = 0
+
+    seen_ids = set()
+
+    duplicate_ids = set()
+
+    with open(
+        file_path,
+        "r",
+        encoding="utf-8-sig",
+        newline=""
+    ) as csv_file:
+
+        reader = csv.reader(
+            csv_file,
+            delimiter=DELIMITER
+        )
+
+        for row in reader:
+
+            if is_ignored_row(row):
+                continue
+
+            total_records += 1
+
+            # Duplicate checking only for valid 3-column rows
+            if len(row) != 3:
+                continue
+
+            employee_id = row[0].strip()
+
+            if not employee_id:
+                continue
+
+            if employee_id in seen_ids:
+
+                duplicate_ids.add(
+                    employee_id
+                )
+
+            else:
+
+                seen_ids.add(
+                    employee_id
+                )
+
+    return (
+        total_records,
+        duplicate_ids
+    )
+
+
+# ============================================================
+# PROGRESS
+# ============================================================
+
+def show_progress(
+    processed,
+    total,
+    final=False
+):
+
+    if total == 0:
+        percentage = 100
+    else:
+        percentage = (
+            processed / total
+        ) * 100
+
+    # Do not display 100% until final batch has committed.
+    if (
+        not final
+        and percentage >= 100
+    ):
+        percentage = 99.99
+
+    bar_length = 40
+
+    filled = int(
+        bar_length
+        * percentage
+        / 100
+    )
+
+    filled = min(
+        filled,
+        bar_length
+    )
+
+    bar = (
+        "#" * filled
+        + "-"
+        * (
+            bar_length - filled
+        )
+    )
+
+    print(
+        f"\rProgress: [{bar}] "
+        f"{percentage:6.2f}%",
+        end="",
+        flush=True
+    )
+
+
+# ============================================================
+# ERROR LOGGER
+# ============================================================
+
+class ErrorLogger:
+
+    def __init__(
+        self,
+        file_handle
+    ):
+
+        self.file = file_handle
+
+        self.error_number = 0
+
+
+    def log(
+        self,
+        issue_type,
+        line_number,
+        employee_id,
+        details,
+        row
+    ):
+
+        self.error_number += 1
+
+        error_id = (
+            f"ERR-"
+            f"{self.error_number:06d}"
+        )
+
+        self.file.write(
+            "=" * 75 + "\n"
+        )
+
+        self.file.write(
+            f"Error ID    : {error_id}\n"
+        )
+
+        self.file.write(
+            f"Timestamp   : "
+            f"{datetime.now():%Y-%m-%d %H:%M:%S}\n"
+        )
+
+        self.file.write(
+            f"Issue Type  : "
+            f"{issue_type}\n"
+        )
+
+        self.file.write(
+            f"CSV Line    : "
+            f"{line_number}\n"
+        )
+
+        self.file.write(
+            f"Employee ID : "
+            f"{employee_id}\n"
+        )
+
+        self.file.write(
+            f"Raw Row     : "
+            f"{DELIMITER.join(row)}\n"
+        )
+
+        self.file.write(
+            f"Details     : "
+            f"{details}\n"
+        )
+
+        self.file.write(
+            "=" * 75 + "\n\n"
+        )
+
+        self.file.flush()
+
+
+# ============================================================
+# FIRESTORE LOOKUP WITH SIMPLE RETRY
+# ============================================================
+
+def find_employee(
+    collection_ref,
+    employee_id
+):
+
+    last_error = None
+
+    for attempt in range(
+        1,
+        LOOKUP_RETRIES + 1
+    ):
+
+        try:
+
+            query = (
+                collection_ref
+                .where(
+                    filter=FieldFilter(
+                        EMPLOYEE_ID_FIELD,
+                        "==",
+                        employee_id
+                    )
+                )
+                .limit(2)
+            )
+
+            documents = list(
+                query.stream()
+            )
+
+            return (
+                documents,
+                None
+            )
+
+        except Exception as error:
+
+            last_error = error
+
+            if attempt < LOOKUP_RETRIES:
+
+                time.sleep(
+                    RETRY_WAIT_SECONDS
+                )
+
+    return (
+        [],
+        last_error
+    )
+
+
+# ============================================================
+# COMMIT UP TO 500 UPDATES
+# ============================================================
+
+def commit_batch(
+    db,
+    operations,
+    error_logger,
+    retry_writer
+):
+
+    if not operations:
+
+        return (
+            0,
+            0
+        )
+
+    last_error = None
+
+
+    # --------------------------------------------------------
+    # Retry entire batch if commit fails.
+    # --------------------------------------------------------
+
+    for attempt in range(
+        1,
+        WRITE_RETRIES + 1
+    ):
+
+        try:
+
+            batch = db.batch()
+
+            for operation in operations:
+
+                batch.update(
+                    operation["reference"],
+                    operation["data"]
+                )
+
+            batch.commit()
+
+            return (
+                len(operations),
+                0
+            )
+
+        except Exception as error:
+
+            last_error = error
+
+            if attempt < WRITE_RETRIES:
+
+                time.sleep(
+                    RETRY_WAIT_SECONDS
+                )
+
+
+    # --------------------------------------------------------
+    # Batch still failed.
+    #
+    # Because the batch was not successfully committed,
+    # put every row from that batch into retry_employees.txt.
+    # --------------------------------------------------------
+
+    for operation in operations:
+
+        error_logger.log(
+            issue_type="FIRESTORE WRITE ERROR",
+            line_number=operation["line"],
+            employee_id=operation["employee_id"],
+            details=(
+                f"Batch failed after "
+                f"{WRITE_RETRIES} attempts. "
+                f"{type(last_error).__name__}: "
+                f"{last_error}"
+            ),
+            row=operation["row"]
+        )
+
+        retry_writer.writerow(
+            operation["row"]
+        )
+
+    return (
+        0,
+        len(operations)
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    home = Path.home()
+
+    input_file_path = (
+        home / INPUT_FILE_NAME
+    )
+
+    not_found_file_path = (
+        home / NOT_FOUND_FILE_NAME
+    )
+
+    error_file_path = (
+        home / ERROR_FILE_NAME
+    )
+
+    retry_file_path = (
+        home / RETRY_FILE_NAME
+    )
+
+
+    # --------------------------------------------------------
+    # Verify input file
+    # --------------------------------------------------------
+
+    if not input_file_path.exists():
+
+        print(
+            f"Input file not found: "
+            f"{input_file_path}"
+        )
+
+        sys.exit(1)
+
+
+    # --------------------------------------------------------
+    # First pass
+    # --------------------------------------------------------
+
+    print()
+    print("Job is running...")
+    print()
+
+    try:
+
+        (
+            total_records,
+            duplicate_ids
+        ) = inspect_input(
+            input_file_path
+        )
+
+    except Exception as error:
+
+        print(
+            f"Unable to read input file: "
+            f"{error}"
+        )
+
+        sys.exit(1)
+
+
+    if total_records == 0:
+
+        print(
+            "No records found."
+        )
+
+        return
+
+
+    # --------------------------------------------------------
+    # Connect to Firestore
+    # --------------------------------------------------------
+
+    try:
+
+        db = firestore.Client(
+            project=PROJECT_ID
+        )
+
+        collection_ref = (
+            db.collection(
+                COLLECTION_NAME
+            )
+        )
+
+    except Exception as error:
+
+        print(
+            f"Unable to connect to Firestore: "
+            f"{error}"
+        )
+
+        sys.exit(1)
+
+
+    # ========================================================
+    # COUNTERS
+    # ========================================================
+
+    processed = 0
+
+    updated = 0
+
+    not_found = 0
+
+    malformed = 0
+
+    lookup_errors = 0
+
+    write_errors = 0
+
+    multiple_matches = 0
+
+    duplicate_records = 0
+
+
+    # Holds up to 500 Firestore updates.
+    pending_updates = []
+
+
+    # Used only for smooth screen refresh.
+    last_progress_time = 0
+
+
+    # ========================================================
+    # OUTPUT FILES
+    #
+    # "w" replaces existing files on every run.
+    # ========================================================
+
+    with (
+
+        open(
+            not_found_file_path,
+            "w",
+            encoding="utf-8"
+        ) as not_found_file,
+
+        open(
+            error_file_path,
+            "w",
+            encoding="utf-8"
+        ) as error_file,
+
+        open(
+            retry_file_path,
+            "w",
+            encoding="utf-8",
+            newline=""
+        ) as retry_file
+
+    ):
+
+        error_logger = ErrorLogger(
+            error_file
+        )
+
+        retry_writer = csv.writer(
+            retry_file,
+            delimiter=DELIMITER,
+            lineterminator="\n"
+        )
+
+
+        # ----------------------------------------------------
+        # Error file header
+        # ----------------------------------------------------
+
+        error_file.write(
+            "EMPLOYEE FIRESTORE UPDATE ERROR LOG\n"
+        )
+
+        error_file.write(
+            f"Run started : "
+            f"{datetime.now():%Y-%m-%d %H:%M:%S}\n"
+        )
+
+        error_file.write(
+            f"Input file  : "
+            f"{input_file_path}\n"
+        )
+
+        error_file.write(
+            f"Project     : "
+            f"{PROJECT_ID}\n"
+        )
+
+        error_file.write(
+            "Database    : (default)\n"
+        )
+
+        error_file.write(
+            f"Collection  : "
+            f"{COLLECTION_NAME}\n\n"
+        )
+
+
+        # ----------------------------------------------------
+        # Initial progress
+        # ----------------------------------------------------
+
+        show_progress(
+            0,
+            total_records
+        )
+
+
+        # ====================================================
+        # PROCESS INPUT FILE
+        # ====================================================
+
+        with open(
+            input_file_path,
+            "r",
+            encoding="utf-8-sig",
+            newline=""
+        ) as csv_file:
+
+            reader = csv.reader(
+                csv_file,
+                delimiter=DELIMITER
+            )
+
+
+            for (
+                line_number,
+                row
+            ) in enumerate(
+                reader,
+                start=1
+            ):
+
+                if is_ignored_row(
+                    row
+                ):
+                    continue
+
+
+                processed += 1
+
+
+                # ============================================
+                # MALFORMED RECORD
+                # ============================================
+
+                if (
+                    len(row) != 3
+                    or
+                    not row[0].strip()
+                ):
+
+                    malformed += 1
+
+                    employee_id = (
+                        row[0].strip()
+                        if row
+                        else "UNKNOWN"
+                    )
+
+                    error_logger.log(
+                        issue_type=(
+                            "MALFORMED RECORD"
+                        ),
+                        line_number=(
+                            line_number
+                        ),
+                        employee_id=(
+                            employee_id
+                        ),
+                        details=(
+                            "Expected exactly "
+                            "3 columns and a "
+                            "non-empty employee ID."
+                        ),
+                        row=row
+                    )
+
+                    retry_writer.writerow(
+                        row
+                    )
+
+                    continue
+
+
+                # ============================================
+                # READ VALUES
+                # ============================================
+
+                employee_id = (
+                    row[0].strip()
+                )
+
+                termination_reason = (
+                    row[1].strip()
+                )
+
+                job_qualifier = (
+                    row[2].strip()
+                )
+
+
+                # ============================================
+                # DUPLICATE EMPLOYEE ID IN INPUT FILE
+                # ============================================
+
+                if (
+                    employee_id
+                    in duplicate_ids
+                ):
+
+                    duplicate_records += 1
+
+                    error_logger.log(
+                        issue_type=(
+                            "DUPLICATE INPUT RECORD"
+                        ),
+                        line_number=(
+                            line_number
+                        ),
+                        employee_id=(
+                            employee_id
+                        ),
+                        details=(
+                            "Employee ID appears "
+                            "more than once in the "
+                            "input file. Record was "
+                            "not updated."
+                        ),
+                        row=row
+                    )
+
+                    retry_writer.writerow(
+                        row
+                    )
+
+                    continue
+
+
+                # ============================================
+                # LOOK UP EMPLOYEE IN FIRESTORE
+                # ============================================
+
+                (
+                    documents,
+                    lookup_error
+                ) = find_employee(
+                    collection_ref,
+                    employee_id
+                )
+
+
+                # ============================================
+                # LOOKUP ERROR
+                # ============================================
+
+                if lookup_error is not None:
+
+                    lookup_errors += 1
+
+                    error_logger.log(
+                        issue_type=(
+                            "FIRESTORE LOOKUP ERROR"
+                        ),
+                        line_number=(
+                            line_number
+                        ),
+                        employee_id=(
+                            employee_id
+                        ),
+                        details=(
+                            f"{type(lookup_error).__name__}: "
+                            f"{lookup_error}"
+                        ),
+                        row=row
+                    )
+
+                    retry_writer.writerow(
+                        row
+                    )
+
+                    continue
+
+
+                # ============================================
+                # EMPLOYEE NOT FOUND
+                # ============================================
+
+                if len(documents) == 0:
+
+                    not_found += 1
+
+                    not_found_file.write(
+                        employee_id + "\n"
+                    )
+
+                    retry_writer.writerow(
+                        row
+                    )
+
+                    continue
+
+
+                # ============================================
+                # MULTIPLE FIRESTORE MATCHES
+                # ============================================
+
+                if len(documents) > 1:
+
+                    multiple_matches += 1
+
+                    error_logger.log(
+                        issue_type=(
+                            "MULTIPLE FIRESTORE MATCHES"
+                        ),
+                        line_number=(
+                            line_number
+                        ),
+                        employee_id=(
+                            employee_id
+                        ),
+                        details=(
+                            "More than one Firestore "
+                            "document was found for "
+                            "this employee ID. "
+                            "Nothing was updated."
+                        ),
+                        row=row
+                    )
+
+                    retry_writer.writerow(
+                        row
+                    )
+
+                    continue
+
+
+                # ============================================
+                # EXACTLY ONE EMPLOYEE FOUND
+                #
+                # ADD UPDATE TO CURRENT BATCH
+                # ============================================
+
+                document = documents[0]
+
+                pending_updates.append(
+                    {
+                        "reference":
+                            document.reference,
+
+                        "employee_id":
+                            employee_id,
+
+                        "line":
+                            line_number,
+
+                        "row":
+                            row,
+
+                        "data":
+                            {
+                                TERMINATION_REASON_FIELD:
+                                    termination_reason,
+
+                                JOB_QUALIFIER_FIELD:
+                                    job_qualifier
+                            }
+                    }
+                )
+
+
+                # ============================================
+                # COMMIT WHEN 500 UPDATES ARE READY
+                # ============================================
+
+                if (
+                    len(pending_updates)
+                    >= BATCH_SIZE
+                ):
+
+                    (
+                        successful,
+                        failed
+                    ) = commit_batch(
+                        db,
+                        pending_updates,
+                        error_logger,
+                        retry_writer
+                    )
+
+                    updated += successful
+
+                    write_errors += failed
+
+                    pending_updates = []
+
+
+                # ============================================
+                # SMOOTH PROGRESS DISPLAY
+                #
+                # Refresh at most twice per second.
+                # ============================================
+
+                current_time = (
+                    time.monotonic()
+                )
+
+                if (
+                    current_time
+                    - last_progress_time
+                    >= 0.5
+                ):
+
+                    show_progress(
+                        processed,
+                        total_records
+                    )
+
+                    last_progress_time = (
+                        current_time
+                    )
+
+
+        # ====================================================
+        # COMMIT FINAL PARTIAL BATCH
+        # ====================================================
+
+        if pending_updates:
+
+            (
+                successful,
+                failed
+            ) = commit_batch(
+                db,
+                pending_updates,
+                error_logger,
+                retry_writer
+            )
+
+            updated += successful
+
+            write_errors += failed
+
+
+        # Flush files
+        not_found_file.flush()
+
+        retry_file.flush()
+
+        error_file.flush()
+
+
+    # ========================================================
+    # FINAL 100%
+    # ========================================================
+
+    show_progress(
+        total_records,
+        total_records,
+        final=True
+    )
+
+    print()
+    print()
+
+
+    # ========================================================
+    # FINAL SUMMARY
+    # ========================================================
+
+    print("=" * 70)
+    print("PROCESSING COMPLETE")
+    print("=" * 70)
+
+    print(
+        f"Total records            : "
+        f"{total_records:,}"
+    )
+
+    print(
+        f"Firestore docs updated   : "
+        f"{updated:,}"
+    )
+
+    print(
+        f"Employees not found      : "
+        f"{not_found:,}"
+    )
+
+    print(
+        f"Malformed records        : "
+        f"{malformed:,}"
+    )
+
+    print(
+        f"Lookup errors            : "
+        f"{lookup_errors:,}"
+    )
+
+    print(
+        f"Write errors             : "
+        f"{write_errors:,}"
+    )
+
+    print(
+        f"Multiple matches         : "
+        f"{multiple_matches:,}"
+    )
+
+    print(
+        f"Duplicate input records  : "
+        f"{duplicate_records:,}"
+    )
+
+    print()
+
+    print(
+        f"Not-found file : "
+        f"{not_found_file_path}"
+    )
+
+    print(
+        f"Error file     : "
+        f"{error_file_path}"
+    )
+
+    print(
+        f"Retry file     : "
+        f"{retry_file_path}"
+    )
+
+    print("=" * 70)
+
+
+# ============================================================
+# START PROGRAM
+# ============================================================
+
+if __name__ == "__main__":
+    main()
