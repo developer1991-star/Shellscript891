@@ -1,139 +1,240 @@
-public async Task<RemarkRecord?> GetLatestRemarkAsync(
-    string jobNumber,
-    CancellationToken cancellationToken = default)
-{
-    const string sql = """
-        SELECT TOP (1)
-            [REMARK],
-            [LAST-UPDATED],
-            [REMSEQ]
-        FROM [V158-RMK104R0]
-        WHERE ISNULL([DELFLAG], '') = ''
-          AND [HIST-FLAG] = 'N'
-          AND [JOBNO] = @JobNumber
-        ORDER BY
-            [LAST-UPDATED] DESC,
-            [REMSEQ] DESC;
-        """;
+#!/usr/bin/env python3
 
-    await using var connection =
-        new SqlConnection(_connectionString);
+import base64
+import json
+from datetime import date, datetime
+from pathlib import Path
 
-    await connection.OpenAsync(cancellationToken);
-
-    await using var command =
-        new SqlCommand(sql, connection);
-
-    command.Parameters.Add(
-        "@JobNumber",
-        SqlDbType.VarChar,
-        10).Value = jobNumber.Trim();
-
-    await using var reader =
-        await command.ExecuteReaderAsync(cancellationToken);
-
-    if (!await reader.ReadAsync(cancellationToken))
-    {
-        return null;
-    }
-
-    var remark = new RemarkRecord
-    {
-        Remark = GetString(reader, "REMARK"),
-        RemarkSequence = GetString(reader, "REMSEQ"),
-        LastUpdated = FormatLegacyDate(
-            reader["LAST-UPDATED"])
-    };
-
-    return remark;
-}
+from google.cloud import firestore
+from google.cloud.firestore_v1.field_path import FieldPath
 
 
-private static string GetString(
-    SqlDataReader reader,
-    string columnName)
-{
-    var value = reader[columnName];
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-    if (value == DBNull.Value)
-    {
-        return string.Empty;
-    }
+PROJECT_ID = "YOUR_PROJECT_ID"
 
-    return Convert.ToString(value)?.Trim() ?? string.Empty;
-}
+COLLECTION_NAME = "Employees"
 
-private static string FormatLegacyDate(object value)
-{
-    if (value == DBNull.Value || value is null)
-    {
-        return string.Empty;
-    }
+OUTPUT_FILE_NAME = "employees_export.json"
 
-    if (value is DateTime dateTime)
-    {
-        return dateTime.ToString("MM/dd/yyyy");
-    }
-
-    if (value is DateOnly dateOnly)
-    {
-        return dateOnly.ToString("MM/dd/yyyy");
-    }
-
-    var text = Convert.ToString(value)?.Trim();
-
-    if (string.IsNullOrWhiteSpace(text))
-    {
-        return string.Empty;
-    }
-
-    if (DateTime.TryParse(text, out var parsedDate))
-    {
-        return parsedDate.ToString("MM/dd/yyyy");
-    }
-
-    // Preserve the original value if this DB column
-    // uses a legacy/non-standard date representation.
-    return text;
-}
+PAGE_SIZE = 5000
 
 
+# ============================================================
+# CONVERT FIRESTORE VALUES TO JSON
+# ============================================================
 
-public async Task<string?> GetMessageAsync(
-    string messageId,
-    CancellationToken cancellationToken = default)
-{
-    const string sql = """
-        SELECT TOP (1)
-            [MESSAGE-TEXT]
-        FROM [V158-MSG104R0]
-        WHERE [MESSAGE-KEY] = @MessageId
-        ORDER BY [MESSAGE-KEY];
-        """;
+def json_converter(value):
 
-    await using var connection =
-        new SqlConnection(_connectionString);
+    # Firestore Timestamp / Python datetime
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
 
-    await connection.OpenAsync(cancellationToken);
+    # Firestore GeoPoint
+    if hasattr(value, "latitude") and hasattr(value, "longitude"):
+        return {
+            "latitude": value.latitude,
+            "longitude": value.longitude
+        }
 
-    await using var command =
-        new SqlCommand(sql, connection);
+    # Firestore DocumentReference
+    if hasattr(value, "path"):
+        return value.path
 
-    command.Parameters.Add(
-        "@MessageId",
-        SqlDbType.VarChar,
-        10).Value = messageId.Trim();
+    # Bytes
+    if isinstance(value, bytes):
+        return base64.b64encode(value).decode("utf-8")
 
-    var result =
-        await command.ExecuteScalarAsync(cancellationToken);
+    return str(value)
 
-    if (result is null || result == DBNull.Value)
-    {
-        // This matches the fallback behavior seen
-        // in the legacy D158500 COBOL.
-        return "APPLICATION ERROR / CALL COMPUTER SERVICES";
-    }
 
-    return Convert.ToString(result)?.Trim();
-}
+# ============================================================
+# MAIN
+# ============================================================
 
+def main():
+
+    output_path = (
+        Path.home()
+        / OUTPUT_FILE_NAME
+    )
+
+    db = firestore.Client(
+        project=PROJECT_ID
+    )
+
+    employees = db.collection(
+        COLLECTION_NAME
+    )
+
+
+    # --------------------------------------------------------
+    # Get total document count for percentage
+    # --------------------------------------------------------
+
+    print()
+    print("Export job is running...")
+    print()
+
+    count_result = employees.count(
+        alias="total"
+    ).get()
+
+    total = count_result[0][0].value
+
+    print(
+        f"Total records: {total:,}"
+    )
+
+    print()
+
+
+    exported = 0
+
+    last_document = None
+
+    first_record = True
+
+
+    # --------------------------------------------------------
+    # Create / replace JSON file
+    # --------------------------------------------------------
+
+    with open(
+        output_path,
+        "w",
+        encoding="utf-8"
+    ) as output_file:
+
+        # Start JSON array
+        output_file.write("[\n")
+
+
+        while True:
+
+            # ------------------------------------------------
+            # Read next page ordered by Firestore document ID
+            # ------------------------------------------------
+
+            query = (
+                employees
+                .order_by(
+                    FieldPath.document_id()
+                )
+                .limit(
+                    PAGE_SIZE
+                )
+            )
+
+
+            if last_document is not None:
+
+                query = query.start_after(
+                    last_document
+                )
+
+
+            documents = list(
+                query.stream(
+                    timeout=120
+                )
+            )
+
+
+            # No more documents
+            if not documents:
+                break
+
+
+            # ------------------------------------------------
+            # Write each Firestore document directly to JSON
+            # ------------------------------------------------
+
+            for document in documents:
+
+                data = document.to_dict()
+
+                # Include Firestore document ID as well
+                data["_firestoreDocumentId"] = (
+                    document.id
+                )
+
+
+                if not first_record:
+                    output_file.write(",\n")
+
+                json.dump(
+                    data,
+                    output_file,
+                    default=json_converter,
+                    ensure_ascii=False,
+                    separators=(",", ":")
+                )
+
+                first_record = False
+
+                exported += 1
+
+
+            # ------------------------------------------------
+            # Save last document for next page
+            # ------------------------------------------------
+
+            last_document = (
+                documents[-1]
+            )
+
+
+            # Write data to disk after each page
+            output_file.flush()
+
+
+            # ------------------------------------------------
+            # Progress
+            # ------------------------------------------------
+
+            percentage = (
+                exported / total
+            ) * 100 if total else 100
+
+
+            print(
+                f"\rProgress: "
+                f"{percentage:6.2f}% "
+                f"({exported:,}/{total:,})",
+                end="",
+                flush=True
+            )
+
+
+        # Close JSON array
+        output_file.write("\n]\n")
+
+
+    print()
+    print()
+    print("=" * 60)
+    print("EXPORT COMPLETE")
+    print("=" * 60)
+
+    print(
+        f"Records exported : "
+        f"{exported:,}"
+    )
+
+    print(
+        f"JSON file        : "
+        f"{output_path}"
+    )
+
+    print("=" * 60)
+
+
+# ============================================================
+# START
+# ============================================================
+
+if __name__ == "__main__":
+    main()
