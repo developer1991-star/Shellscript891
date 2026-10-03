@@ -1,88 +1,2203 @@
-namespace PCPM.Application.D158302;
+#!/usr/bin/env python3
 
-public interface ID158302Repository
-{
-    Task<D158302StatusRecord?> FindStatusAsync(
-        string jobNumber,
-        string functionalArea,
-        CancellationToken cancellationToken = default);
+import csv
+import random
+import sys
+import threading
+import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from pathlib import Path
 
-    Task<D158302StatusRecord?> FindNextStatusAsync(
-        string jobNumber,
-        string functionalArea,
-        CancellationToken cancellationToken = default);
+from google.api_core import exceptions as gexc
+from google.api_core import retry as api_retry
+from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
-    Task<D158302StatusRecord?> FindPreviousStatusAsync(
-        string jobNumber,
-        string functionalArea,
-        CancellationToken cancellationToken = default);
 
-    Task<string?> GetFunctionalAreaDescriptionAsync(
-        string functionalArea,
-        CancellationToken cancellationToken = default);
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-    Task<IReadOnlyList<D158302RemarkRecord>> GetInitialRemarksAsync(
-        string jobNumber,
-        string functionalArea,
-        string historyFlag,
-        CancellationToken cancellationToken = default);
+PROJECT_ID = "gcp-emp-ep-uat"
+COLLECTION_NAME = "Employees"
 
-    Task<IReadOnlyList<D158302RemarkRecord>> GetRemarksForwardAsync(
-        string jobNumber,
-        string functionalArea,
-        string historyFlag,
-        string lastUpdated,
-        int remarkType,
-        int remarkSequence,
-        CancellationToken cancellationToken = default);
+# Input file must be in your Cloud Shell home directory.
+INPUT_FILE_NAME = "IDH_20260918.txt"
 
-    Task<IReadOnlyList<D158302RemarkRecord>> GetRemarksBackwardAsync(
-        string jobNumber,
-        string functionalArea,
-        string historyFlag,
-        string lastUpdated,
-        int remarkType,
-        int remarkSequence,
-        CancellationToken cancellationToken = default);
+# Output files will be created/replaced in your home directory.
+NOT_FOUND_FILE_NAME = "employees_not_found.txt"
+ERROR_FILE_NAME = "errors.txt"
+RETRY_FILE_NAME = "retry_employees.txt"
 
-    Task<D158302RemarkRecord?> GetLatestRemarkAsync(
-        string jobNumber,
-        CancellationToken cancellationToken = default);
+DELIMITER = "~"
 
-    Task<string?> GetMessageAsync(
-        string messageId,
-        CancellationToken cancellationToken = default);
-}
 
-namespace PCPM.Application.D158302;
+# ============================================================
+# FIRESTORE FIELD NAMES
+# ============================================================
 
-public sealed class D158302StatusRecord
-{
-    public string JobNumber { get; set; } = "";
-    public string FunctionalArea { get; set; } = "";
-    public string FunctionalAreaStatus { get; set; } = "";
-    public string PercentComplete { get; set; } = "";
-    public string StartDate { get; set; } = "";
-    public string ProjectedEndDate { get; set; } = "";
-    public string EndDate { get; set; } = "";
-    public string LastUpdated { get; set; } = "";
-    public string UserId { get; set; } = "";
-}
+EMPLOYEE_ID_FIELD = "employeeID"
+TERMINATION_REASON_FIELD = "terminationReasonCode"
+JOB_QUALIFIER_FIELD = "employeeJobDotQualifier"
 
-public sealed class D158302RemarkRecord
-{
-    public string JobNumber { get; set; } = "";
-    public string FunctionalArea { get; set; } = "";
 
-    public string Remark { get; set; } = "";
-    public string LastUpdated { get; set; } = "";
+# ============================================================
+# PERFORMANCE / RELIABILITY SETTINGS
+# ============================================================
 
-    public int RemarkType { get; set; }
-    public int RemarkSequence { get; set; }
+WRITE_BATCH_SIZE = 500
+LOOKUP_GROUP_SIZE = 30
+CSV_CHUNK_SIZE = 15000
 
-    public string RemarkStatusFlag { get; set; } = "";
-    public string RemarkDistributionFlag { get; set; } = "";
+# Slightly lower query concurrency for better stability.
+QUERY_WORKERS = 6
+WRITE_WORKERS = 4
 
-    public string HistoryFlag { get; set; } = "";
-    public string UserId { get; set; } = "";
-}
+# Retry temporary lookup/write problems.
+LOOKUP_MAX_ATTEMPTS = 12
+WRITE_MAX_ATTEMPTS = 8
+
+LOOKUP_RPC_TIMEOUT = 30
+WRITE_RPC_TIMEOUT = 60
+
+BACKOFF_INITIAL_SECONDS = 2
+BACKOFF_MAX_SECONDS = 30
+
+# Refresh progress about 5 times per second.
+PROGRESS_REFRESH_SECONDS = 0.20
+
+
+# ============================================================
+# FIRESTORE RETRY POLICIES
+# ============================================================
+
+TRANSIENT_EXCEPTIONS = (
+    gexc.Aborted,
+    gexc.DeadlineExceeded,
+    gexc.InternalServerError,
+    gexc.ResourceExhausted,
+    gexc.ServiceUnavailable,
+    gexc.TooManyRequests,
+)
+
+LOOKUP_RPC_RETRY = api_retry.Retry(
+    predicate=api_retry.if_exception_type(
+        *TRANSIENT_EXCEPTIONS
+    ),
+    initial=0.5,
+    maximum=5.0,
+    multiplier=2.0,
+    deadline=20.0,
+)
+
+WRITE_RPC_RETRY = api_retry.Retry(
+    predicate=api_retry.if_exception_type(
+        *TRANSIENT_EXCEPTIONS
+    ),
+    initial=0.5,
+    maximum=5.0,
+    multiplier=2.0,
+    deadline=30.0,
+)
+
+
+# ============================================================
+# GENERAL HELPERS
+# ============================================================
+
+def groups(items, size):
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
+def get_backoff(attempt):
+    delay = min(
+        BACKOFF_MAX_SECONDS,
+        BACKOFF_INITIAL_SECONDS
+        * (2 ** max(0, attempt - 1)),
+    )
+
+    # Small random delay prevents all workers retrying
+    # at exactly the same instant.
+    return delay + random.uniform(0, 1)
+
+
+def is_transient_error(error):
+    if isinstance(
+        error,
+        TRANSIENT_EXCEPTIONS
+    ):
+        return True
+
+    message = (
+        f"{type(error).__name__}: {error}"
+    ).lower()
+
+    transient_markers = (
+        "429",
+        "503",
+        "504",
+        "timeout",
+        "timed out",
+        "deadline",
+        "unavailable",
+        "resource exhausted",
+        "connection reset",
+        "connection refused",
+        "metadata from plugin",
+        "getting metadata from plugin failed",
+        "retryerror",
+    )
+
+    return any(
+        marker in message
+        for marker in transient_markers
+    )
+
+
+def is_ignored_row(row):
+    if not row:
+        return True
+
+    if all(
+        not value.strip()
+        for value in row
+    ):
+        return True
+
+    employee_id = row[0].strip()
+
+    # Header
+    if employee_id.lower() == "employeeid":
+        return True
+
+    # Existing special record
+    if employee_id == "empty_record":
+        return True
+
+    # Trailer
+    if employee_id.upper().startswith("TRL"):
+        return True
+
+    return False
+
+
+# ============================================================
+# FIRST PASS
+#
+# Count records and detect duplicate employee IDs across
+# the complete file.
+#
+# All rows for a duplicate employee ID will be skipped and
+# copied to retry_employees.txt.
+# ============================================================
+
+def inspect_input(file_path):
+    total_records = 0
+
+    seen_employee_ids = set()
+    duplicate_employee_ids = set()
+
+    with open(
+        file_path,
+        "r",
+        encoding="utf-8-sig",
+        newline="",
+    ) as csv_file:
+
+        reader = csv.reader(
+            csv_file,
+            delimiter=DELIMITER,
+        )
+
+        for row in reader:
+
+            if is_ignored_row(row):
+                continue
+
+            total_records += 1
+
+            # Malformed rows will be handled
+            # during the actual processing pass.
+            if len(row) != 3:
+                continue
+
+            employee_id = row[0].strip()
+
+            if not employee_id:
+                continue
+
+            if employee_id in seen_employee_ids:
+
+                duplicate_employee_ids.add(
+                    employee_id
+                )
+
+            else:
+
+                seen_employee_ids.add(
+                    employee_id
+                )
+
+    return (
+        total_records,
+        duplicate_employee_ids
+    )
+
+
+# ============================================================
+# SMOOTH PROGRESS
+#
+# Every input row has two work units:
+#
+# 1. Lookup completed
+# 2. Final outcome completed
+#
+# This allows the percentage to move while queries and
+# writes are happening instead of waiting for a whole
+# 15,000-row chunk.
+# ============================================================
+
+class ProgressTracker:
+
+    def __init__(
+        self,
+        total_records
+    ):
+        self.total_records = total_records
+
+        self.total_units = max(
+            1,
+            total_records * 2
+        )
+
+        self.completed_units = 0
+
+        self.lock = threading.Lock()
+
+        self.last_render = 0.0
+
+
+    def lookup_complete(
+        self,
+        count
+    ):
+
+        with self.lock:
+
+            self.completed_units += count
+
+            self._render()
+
+
+    def finalized_complete(
+        self,
+        count
+    ):
+
+        with self.lock:
+
+            self.completed_units += count
+
+            self._render()
+
+
+    def immediate_complete(
+        self,
+        count
+    ):
+        """
+        Used for malformed and duplicate rows.
+
+        No Firestore lookup/write is needed, so both
+        work units are immediately completed.
+        """
+
+        with self.lock:
+
+            self.completed_units += (
+                count * 2
+            )
+
+            self._render()
+
+
+    def _render(
+        self,
+        force=False
+    ):
+
+        now = time.monotonic()
+
+        if (
+            not force
+            and
+            now - self.last_render
+            < PROGRESS_REFRESH_SECONDS
+        ):
+            return
+
+        self.last_render = now
+
+        percentage = min(
+            100.0,
+            (
+                self.completed_units
+                / self.total_units
+            ) * 100
+        )
+
+        bar_length = 40
+
+        filled = min(
+            bar_length,
+            int(
+                bar_length
+                * percentage
+                / 100
+            )
+        )
+
+        bar = (
+            "#" * filled
+            + "-"
+            * (
+                bar_length - filled
+            )
+        )
+
+        print(
+            f"\rProgress: [{bar}] "
+            f"{percentage:6.2f}%",
+            end="",
+            flush=True
+        )
+
+
+    def show_initial(self):
+
+        with self.lock:
+            self._render(
+                force=True
+            )
+
+
+    def finish(self):
+
+        with self.lock:
+
+            self.completed_units = (
+                self.total_units
+            )
+
+            self._render(
+                force=True
+            )
+
+        print()
+
+
+# ============================================================
+# ERROR LOG
+# ============================================================
+
+class ErrorLogger:
+
+    def __init__(
+        self,
+        file_handle
+    ):
+
+        self.file = file_handle
+
+        self.error_number = 0
+
+
+    def log(
+        self,
+        issue_type,
+        line_number,
+        employee_id="UNKNOWN",
+        details="",
+        row=None
+    ):
+
+        self.error_number += 1
+
+        error_id = (
+            f"ERR-"
+            f"{self.error_number:06d}"
+        )
+
+        self.file.write(
+            "=" * 80 + "\n"
+        )
+
+        self.file.write(
+            f"Error ID    : "
+            f"{error_id}\n"
+        )
+
+        self.file.write(
+            f"Timestamp   : "
+            f"{datetime.now():%Y-%m-%d %H:%M:%S}\n"
+        )
+
+        self.file.write(
+            f"Issue Type  : "
+            f"{issue_type}\n"
+        )
+
+        self.file.write(
+            f"CSV Line    : "
+            f"{line_number}\n"
+        )
+
+        self.file.write(
+            f"Employee ID : "
+            f"{employee_id}\n"
+        )
+
+        if row is not None:
+
+            self.file.write(
+                f"Raw Row     : "
+                f"{DELIMITER.join(row)}\n"
+            )
+
+        if details:
+
+            self.file.write(
+                f"Details     : "
+                f"{details}\n"
+            )
+
+        self.file.write(
+            "=" * 80 + "\n\n"
+        )
+
+        self.file.flush()
+
+
+# ============================================================
+# RETRY FILE
+#
+# Contains the complete original CSV row for every record
+# that was NOT safely updated.
+#
+# You can later set:
+#
+# INPUT_FILE_NAME = "retry_employees.txt"
+#
+# and run the same program again.
+# ============================================================
+
+class RetryFileWriter:
+
+    def __init__(
+        self,
+        file_handle
+    ):
+
+        self.file = file_handle
+
+        self.writer = csv.writer(
+            file_handle,
+            delimiter=DELIMITER,
+            lineterminator="\n"
+        )
+
+        # Prevent the same CSV line from being
+        # written more than once.
+        self.written_lines = set()
+
+
+    def write(
+        self,
+        line_number,
+        row
+    ):
+
+        if (
+            line_number
+            in self.written_lines
+        ):
+            return
+
+        self.writer.writerow(
+            row
+        )
+
+        self.file.flush()
+
+        self.written_lines.add(
+            line_number
+        )
+
+
+# ============================================================
+# ONE FIRESTORE LOOKUP QUERY
+# ============================================================
+
+def query_employee_group(
+    collection_ref,
+    employee_ids
+):
+
+    query = collection_ref.where(
+        filter=FieldFilter(
+            EMPLOYEE_ID_FIELD,
+            "in",
+            employee_ids
+        )
+    )
+
+    return list(
+        query.stream(
+            retry=LOOKUP_RPC_RETRY,
+            timeout=LOOKUP_RPC_TIMEOUT
+        )
+    )
+
+
+# ============================================================
+# ROBUST LOOKUP
+#
+# Temporary failures:
+#   retry with exponential backoff.
+#
+# Permanent group failures:
+#   split group into smaller groups to isolate bad ID.
+# ============================================================
+
+def robust_lookup(
+    collection_ref,
+    employee_ids
+):
+
+    last_error = None
+
+    retry_attempts = 0
+
+
+    # --------------------------------------------------------
+    # Retry temporary failures
+    # --------------------------------------------------------
+
+    for attempt in range(
+        1,
+        LOOKUP_MAX_ATTEMPTS + 1
+    ):
+
+        try:
+
+            documents = (
+                query_employee_group(
+                    collection_ref,
+                    employee_ids
+                )
+            )
+
+            return (
+                documents,
+                {},
+                retry_attempts
+            )
+
+        except Exception as error:
+
+            last_error = error
+
+            # Permanent error:
+            # do not repeatedly retry.
+            if not is_transient_error(
+                error
+            ):
+                break
+
+            if (
+                attempt
+                < LOOKUP_MAX_ATTEMPTS
+            ):
+
+                retry_attempts += 1
+
+                time.sleep(
+                    get_backoff(
+                        attempt
+                    )
+                )
+
+
+    # --------------------------------------------------------
+    # Permanent group error.
+    #
+    # Split query so one bad employee cannot fail
+    # all other employees in the group.
+    # --------------------------------------------------------
+
+    if (
+        last_error is not None
+        and
+        not is_transient_error(
+            last_error
+        )
+        and
+        len(employee_ids) > 1
+    ):
+
+        midpoint = (
+            len(employee_ids) // 2
+        )
+
+        (
+            left_docs,
+            left_errors,
+            left_retries
+        ) = robust_lookup(
+            collection_ref,
+            employee_ids[:midpoint]
+        )
+
+        (
+            right_docs,
+            right_errors,
+            right_retries
+        ) = robust_lookup(
+            collection_ref,
+            employee_ids[midpoint:]
+        )
+
+        combined_errors = {}
+
+        combined_errors.update(
+            left_errors
+        )
+
+        combined_errors.update(
+            right_errors
+        )
+
+        return (
+            left_docs + right_docs,
+            combined_errors,
+            (
+                retry_attempts
+                + left_retries
+                + right_retries
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # Lookup still failed after every retry.
+    # --------------------------------------------------------
+
+    if last_error is None:
+
+        message = (
+            "Unknown Firestore lookup failure"
+        )
+
+    else:
+
+        message = (
+            f"{type(last_error).__name__}: "
+            f"{last_error}"
+        )
+
+
+    errors = {
+
+        employee_id: message
+
+        for employee_id
+        in employee_ids
+    }
+
+
+    return (
+        [],
+        errors,
+        retry_attempts
+    )
+
+
+# ============================================================
+# BUILD FIRESTORE WRITE BATCH
+# ============================================================
+
+def build_batch(
+    db,
+    operations
+):
+
+    batch = db.batch()
+
+    for operation in operations:
+
+        batch.update(
+            operation["reference"],
+            operation["data"]
+        )
+
+    return batch
+
+
+# ============================================================
+# ROBUST 500-WRITE COMMIT
+# ============================================================
+
+def robust_commit(
+    db,
+    operations
+):
+
+    last_error = None
+
+    retry_attempts = 0
+
+
+    # --------------------------------------------------------
+    # Retry temporary write failures
+    # --------------------------------------------------------
+
+    for attempt in range(
+        1,
+        WRITE_MAX_ATTEMPTS + 1
+    ):
+
+        try:
+
+            # Rebuild batch on every retry.
+            batch = build_batch(
+                db,
+                operations
+            )
+
+            batch.commit(
+                retry=WRITE_RPC_RETRY,
+                timeout=WRITE_RPC_TIMEOUT
+            )
+
+            return (
+                len(operations),
+                [],
+                retry_attempts,
+                0
+            )
+
+        except Exception as error:
+
+            last_error = error
+
+            if not is_transient_error(
+                error
+            ):
+                break
+
+            if (
+                attempt
+                < WRITE_MAX_ATTEMPTS
+            ):
+
+                retry_attempts += 1
+
+                time.sleep(
+                    get_backoff(
+                        attempt
+                    )
+                )
+
+
+    # --------------------------------------------------------
+    # Permanent batch error.
+    #
+    # Split the batch so one bad document cannot
+    # prevent hundreds of valid employees updating.
+    # --------------------------------------------------------
+
+    if (
+        last_error is not None
+        and
+        not is_transient_error(
+            last_error
+        )
+        and
+        len(operations) > 1
+    ):
+
+        midpoint = (
+            len(operations) // 2
+        )
+
+        (
+            left_success,
+            left_failures,
+            left_retries,
+            left_splits
+        ) = robust_commit(
+            db,
+            operations[:midpoint]
+        )
+
+        (
+            right_success,
+            right_failures,
+            right_retries,
+            right_splits
+        ) = robust_commit(
+            db,
+            operations[midpoint:]
+        )
+
+        return (
+            left_success
+            + right_success,
+
+            left_failures
+            + right_failures,
+
+            (
+                retry_attempts
+                + left_retries
+                + right_retries
+            ),
+
+            (
+                1
+                + left_splits
+                + right_splits
+            )
+        )
+
+
+    if last_error is None:
+
+        error_message = (
+            "Unknown Firestore write error"
+        )
+
+    else:
+
+        error_message = (
+            f"{type(last_error).__name__}: "
+            f"{last_error}"
+        )
+
+
+    failures = [
+
+        (
+            operation,
+            error_message
+        )
+
+        for operation
+        in operations
+    ]
+
+
+    return (
+        0,
+        failures,
+        retry_attempts,
+        0
+    )
+
+
+# ============================================================
+# PROCESS ONE CSV CHUNK
+# ============================================================
+
+def process_chunk(
+    records,
+    db,
+    collection_ref,
+    query_pool,
+    write_pool,
+    not_found_file,
+    retry_writer,
+    error_log,
+    progress,
+    stats
+):
+
+    employee_ids = [
+
+        record["employee_id"]
+
+        for record
+        in records
+    ]
+
+
+    documents_by_employee = (
+        defaultdict(list)
+    )
+
+    lookup_errors = {}
+
+
+    # ========================================================
+    # FIRESTORE LOOKUPS
+    # ========================================================
+
+    lookup_futures = {}
+
+
+    for employee_group in groups(
+        employee_ids,
+        LOOKUP_GROUP_SIZE
+    ):
+
+        future = query_pool.submit(
+            robust_lookup,
+            collection_ref,
+            employee_group
+        )
+
+        lookup_futures[
+            future
+        ] = employee_group
+
+
+    for future in as_completed(
+        lookup_futures
+    ):
+
+        employee_group = (
+            lookup_futures[
+                future
+            ]
+        )
+
+
+        try:
+
+            (
+                documents,
+                errors,
+                retries_used
+            ) = future.result()
+
+
+        except Exception as error:
+
+            documents = []
+
+            errors = {
+
+                employee_id:
+                    (
+                        f"{type(error).__name__}: "
+                        f"{error}"
+                    )
+
+                for employee_id
+                in employee_group
+            }
+
+            retries_used = 0
+
+
+        stats[
+            "lookup_retry_attempts"
+        ] += retries_used
+
+
+        # Smooth percentage movement.
+        progress.lookup_complete(
+            len(employee_group)
+        )
+
+
+        lookup_errors.update(
+            errors
+        )
+
+
+        for document in documents:
+
+            try:
+
+                found_employee_id = str(
+                    document.get(
+                        EMPLOYEE_ID_FIELD
+                    )
+                ).strip()
+
+
+                documents_by_employee[
+                    found_employee_id
+                ].append(
+                    document
+                )
+
+
+            except Exception as error:
+
+                error_log.log(
+                    issue_type=(
+                        "INVALID FIRESTORE DOCUMENT"
+                    ),
+
+                    line_number="N/A",
+
+                    details=(
+                        f"Document "
+                        f"{document.reference.path}: "
+                        f"{type(error).__name__}: "
+                        f"{error}"
+                    )
+                )
+
+
+    # ========================================================
+    # CREATE WRITE OPERATIONS
+    # ========================================================
+
+    write_operations = []
+
+
+    for record in records:
+
+        employee_id = (
+            record["employee_id"]
+        )
+
+
+        # ----------------------------------------------------
+        # LOOKUP ERROR
+        # ----------------------------------------------------
+
+        if employee_id in lookup_errors:
+
+            stats[
+                "lookup_errors"
+            ] += 1
+
+
+            error_log.log(
+                issue_type=(
+                    "FIRESTORE LOOKUP ERROR"
+                ),
+
+                line_number=(
+                    record["line"]
+                ),
+
+                employee_id=(
+                    employee_id
+                ),
+
+                details=(
+                    lookup_errors[
+                        employee_id
+                    ]
+                ),
+
+                row=record["row"]
+            )
+
+
+            # Add original CSV row to retry file.
+            retry_writer.write(
+                record["line"],
+                record["row"]
+            )
+
+
+            progress.finalized_complete(
+                1
+            )
+
+            continue
+
+
+        matching_documents = (
+            documents_by_employee.get(
+                employee_id,
+                []
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # EMPLOYEE NOT FOUND
+        # ----------------------------------------------------
+
+        if not matching_documents:
+
+            stats[
+                "not_found"
+            ] += 1
+
+
+            not_found_file.write(
+                employee_id + "\n"
+            )
+
+            not_found_file.flush()
+
+
+            # Complete original record goes to retry file.
+            retry_writer.write(
+                record["line"],
+                record["row"]
+            )
+
+
+            progress.finalized_complete(
+                1
+            )
+
+            continue
+
+
+        # ----------------------------------------------------
+        # MULTIPLE FIRESTORE MATCHES
+        #
+        # DO NOT UPDATE ANY DOCUMENT.
+        # ----------------------------------------------------
+
+        if len(
+            matching_documents
+        ) > 1:
+
+            stats[
+                "multiple_matches"
+            ] += 1
+
+
+            document_paths = [
+
+                document.reference.path
+
+                for document
+                in matching_documents
+            ]
+
+
+            error_log.log(
+                issue_type=(
+                    "MULTIPLE FIRESTORE "
+                    "MATCHES - NOT UPDATED"
+                ),
+
+                line_number=(
+                    record["line"]
+                ),
+
+                employee_id=(
+                    employee_id
+                ),
+
+                details=(
+                    f"Found "
+                    f"{len(matching_documents)} "
+                    f"matching documents: "
+                    f"{document_paths}. "
+                    f"Employee skipped."
+                ),
+
+                row=record["row"]
+            )
+
+
+            retry_writer.write(
+                record["line"],
+                record["row"]
+            )
+
+
+            progress.finalized_complete(
+                1
+            )
+
+            continue
+
+
+        # ----------------------------------------------------
+        # EXACTLY ONE FIRESTORE DOCUMENT
+        # ----------------------------------------------------
+
+        document = (
+            matching_documents[0]
+        )
+
+
+        stats[
+            "matched_rows"
+        ] += 1
+
+
+        write_operations.append(
+            {
+
+                "reference":
+                    document.reference,
+
+                "path":
+                    document.reference.path,
+
+                "employee_id":
+                    employee_id,
+
+                "line":
+                    record["line"],
+
+                "row":
+                    record["row"],
+
+                "data":
+                    {
+
+                        TERMINATION_REASON_FIELD:
+                            record[
+                                "termination_reason"
+                            ],
+
+                        JOB_QUALIFIER_FIELD:
+                            record[
+                                "job_qualifier"
+                            ]
+                    }
+            }
+        )
+
+
+    # ========================================================
+    # 500-WRITE BATCHES
+    # ========================================================
+
+    write_futures = {}
+
+
+    for write_group in groups(
+        write_operations,
+        WRITE_BATCH_SIZE
+    ):
+
+        future = write_pool.submit(
+            robust_commit,
+            db,
+            write_group
+        )
+
+        write_futures[
+            future
+        ] = write_group
+
+
+    for future in as_completed(
+        write_futures
+    ):
+
+        write_group = (
+            write_futures[
+                future
+            ]
+        )
+
+
+        try:
+
+            (
+                successful_count,
+                failures,
+                retry_attempts,
+                split_count
+            ) = future.result()
+
+
+        except Exception as error:
+
+            successful_count = 0
+
+            retry_attempts = 0
+
+            split_count = 0
+
+
+            failures = [
+
+                (
+                    operation,
+
+                    (
+                        f"{type(error).__name__}: "
+                        f"{error}"
+                    )
+                )
+
+                for operation
+                in write_group
+            ]
+
+
+        stats[
+            "updated_docs"
+        ] += successful_count
+
+
+        stats[
+            "write_retry_attempts"
+        ] += retry_attempts
+
+
+        stats[
+            "batch_splits"
+        ] += split_count
+
+
+        stats[
+            "write_errors"
+        ] += len(
+            failures
+        )
+
+
+        # ----------------------------------------------------
+        # WRITE FAILURES
+        # ----------------------------------------------------
+
+        for (
+            operation,
+            error_message
+        ) in failures:
+
+
+            error_log.log(
+                issue_type=(
+                    "FIRESTORE WRITE ERROR"
+                ),
+
+                line_number=(
+                    operation["line"]
+                ),
+
+                employee_id=(
+                    operation[
+                        "employee_id"
+                    ]
+                ),
+
+                details=(
+                    f"Document: "
+                    f"{operation['path']}. "
+                    f"{error_message}"
+                ),
+
+                row=(
+                    operation["row"]
+                )
+            )
+
+
+            retry_writer.write(
+                operation["line"],
+                operation["row"]
+            )
+
+
+        # Smooth percentage movement as each
+        # write batch completes.
+        progress.finalized_complete(
+            len(write_group)
+        )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    home = Path.home()
+
+
+    input_file_path = (
+        home
+        / INPUT_FILE_NAME
+    )
+
+
+    not_found_file_path = (
+        home
+        / NOT_FOUND_FILE_NAME
+    )
+
+
+    error_file_path = (
+        home
+        / ERROR_FILE_NAME
+    )
+
+
+    retry_file_path = (
+        home
+        / RETRY_FILE_NAME
+    )
+
+
+    # --------------------------------------------------------
+    # CHECK INPUT FILE
+    # --------------------------------------------------------
+
+    if not input_file_path.exists():
+
+        print(
+            f"Input file not found: "
+            f"{input_file_path}"
+        )
+
+        sys.exit(1)
+
+
+    print()
+    print("Job is running...")
+    print()
+
+
+    # ========================================================
+    # FIRST PASS
+    #
+    # Count records + detect duplicate employee IDs.
+    # ========================================================
+
+    try:
+
+        (
+            total_records,
+            duplicate_employee_ids
+        ) = inspect_input(
+            input_file_path
+        )
+
+
+    except Exception as error:
+
+        print(
+            f"Unable to read input file: "
+            f"{error}"
+        )
+
+        sys.exit(1)
+
+
+    if total_records == 0:
+
+        print(
+            "No employee records found."
+        )
+
+        return
+
+
+    # ========================================================
+    # STATISTICS
+    # ========================================================
+
+    stats = {
+
+        "matched_rows": 0,
+
+        "updated_docs": 0,
+
+        "not_found": 0,
+
+        "malformed": 0,
+
+        "lookup_errors": 0,
+
+        "write_errors": 0,
+
+        "multiple_matches": 0,
+
+        "duplicate_input_rows": 0,
+
+        "lookup_retry_attempts": 0,
+
+        "write_retry_attempts": 0,
+
+        "batch_splits": 0
+    }
+
+
+    progress = ProgressTracker(
+        total_records
+    )
+
+
+    # ========================================================
+    # OPEN OUTPUT FILES
+    #
+    # "w" means existing files are replaced.
+    # ========================================================
+
+    with (
+
+        open(
+            not_found_file_path,
+            "w",
+            encoding="utf-8"
+        ) as not_found_file,
+
+        open(
+            error_file_path,
+            "w",
+            encoding="utf-8"
+        ) as error_file,
+
+        open(
+            retry_file_path,
+            "w",
+            encoding="utf-8",
+            newline=""
+        ) as retry_file
+
+    ):
+
+
+        error_log = ErrorLogger(
+            error_file
+        )
+
+
+        retry_writer = RetryFileWriter(
+            retry_file
+        )
+
+
+        # ----------------------------------------------------
+        # ERROR FILE HEADER
+        # ----------------------------------------------------
+
+        error_file.write(
+            "EMPLOYEE FIRESTORE UPDATE ERROR LOG\n"
+        )
+
+        error_file.write(
+            f"Run started : "
+            f"{datetime.now():%Y-%m-%d %H:%M:%S}\n"
+        )
+
+        error_file.write(
+            f"Input file  : "
+            f"{input_file_path}\n"
+        )
+
+        error_file.write(
+            f"Project     : "
+            f"{PROJECT_ID}\n"
+        )
+
+        error_file.write(
+            "Database    : (default)\n"
+        )
+
+        error_file.write(
+            f"Collection  : "
+            f"{COLLECTION_NAME}\n\n"
+        )
+
+        error_file.flush()
+
+
+        # ====================================================
+        # FIRESTORE CONNECTION
+        # ====================================================
+
+        try:
+
+            db = firestore.Client(
+                project=PROJECT_ID
+            )
+
+
+            collection_ref = (
+                db.collection(
+                    COLLECTION_NAME
+                )
+            )
+
+
+        except Exception as error:
+
+            error_log.log(
+                issue_type=(
+                    "FIRESTORE STARTUP ERROR"
+                ),
+
+                line_number="N/A",
+
+                details=(
+                    f"{type(error).__name__}: "
+                    f"{error}"
+                )
+            )
+
+
+            print()
+            print(
+                f"Firestore connection failed. "
+                f"See {error_file_path}"
+            )
+
+
+            sys.exit(1)
+
+
+        # ====================================================
+        # SHOW ONLY PERCENTAGE
+        # ====================================================
+
+        progress.show_initial()
+
+
+        record_buffer = []
+
+
+        # ====================================================
+        # THREAD POOLS
+        # ====================================================
+
+        with (
+
+            ThreadPoolExecutor(
+                max_workers=QUERY_WORKERS
+            ) as query_pool,
+
+            ThreadPoolExecutor(
+                max_workers=WRITE_WORKERS
+            ) as write_pool,
+
+            open(
+                input_file_path,
+                "r",
+                encoding="utf-8-sig",
+                newline=""
+            ) as csv_file
+
+        ):
+
+
+            reader = csv.reader(
+                csv_file,
+                delimiter=DELIMITER
+            )
+
+
+            for (
+                line_number,
+                row
+            ) in enumerate(
+                reader,
+                start=1
+            ):
+
+
+                if is_ignored_row(
+                    row
+                ):
+                    continue
+
+
+                # ============================================
+                # MALFORMED RECORD
+                # ============================================
+
+                if (
+                    len(row) != 3
+                    or
+                    not row[0].strip()
+                ):
+
+
+                    stats[
+                        "malformed"
+                    ] += 1
+
+
+                    employee_id = (
+
+                        row[0].strip()
+
+                        if (
+                            row
+                            and
+                            row[0].strip()
+                        )
+
+                        else
+                        "UNKNOWN"
+                    )
+
+
+                    error_log.log(
+                        issue_type=(
+                            "MALFORMED RECORD"
+                        ),
+
+                        line_number=(
+                            line_number
+                        ),
+
+                        employee_id=(
+                            employee_id
+                        ),
+
+                        details=(
+                            "Expected exactly "
+                            "3 columns and a "
+                            "non-empty employee ID. "
+                            f"Found {len(row)} "
+                            "column(s)."
+                        ),
+
+                        row=row
+                    )
+
+
+                    # Complete original malformed row
+                    # goes into retry file.
+                    retry_writer.write(
+                        line_number,
+                        row
+                    )
+
+
+                    progress.immediate_complete(
+                        1
+                    )
+
+
+                    continue
+
+
+                employee_id = (
+                    row[0].strip()
+                )
+
+
+                # ============================================
+                # DUPLICATE INPUT EMPLOYEE ID
+                #
+                # Skip ALL occurrences.
+                # ============================================
+
+                if (
+                    employee_id
+                    in duplicate_employee_ids
+                ):
+
+
+                    stats[
+                        "duplicate_input_rows"
+                    ] += 1
+
+
+                    error_log.log(
+                        issue_type=(
+                            "DUPLICATE INPUT "
+                            "EMPLOYEE ID - "
+                            "NOT UPDATED"
+                        ),
+
+                        line_number=(
+                            line_number
+                        ),
+
+                        employee_id=(
+                            employee_id
+                        ),
+
+                        details=(
+                            "Employee ID occurs "
+                            "more than once in the "
+                            "input file. All rows "
+                            "for this employee are "
+                            "skipped."
+                        ),
+
+                        row=row
+                    )
+
+
+                    retry_writer.write(
+                        line_number,
+                        row
+                    )
+
+
+                    progress.immediate_complete(
+                        1
+                    )
+
+
+                    continue
+
+
+                # ============================================
+                # VALID RECORD
+                # ============================================
+
+                record_buffer.append(
+                    {
+
+                        "line":
+                            line_number,
+
+                        "employee_id":
+                            employee_id,
+
+                        "termination_reason":
+                            row[1].strip(),
+
+                        "job_qualifier":
+                            row[2].strip(),
+
+                        "row":
+                            row
+                    }
+                )
+
+
+                # ============================================
+                # PROCESS CURRENT CHUNK
+                # ============================================
+
+                if (
+                    len(record_buffer)
+                    >=
+                    CSV_CHUNK_SIZE
+                ):
+
+
+                    process_chunk(
+                        records=(
+                            record_buffer
+                        ),
+
+                        db=db,
+
+                        collection_ref=(
+                            collection_ref
+                        ),
+
+                        query_pool=(
+                            query_pool
+                        ),
+
+                        write_pool=(
+                            write_pool
+                        ),
+
+                        not_found_file=(
+                            not_found_file
+                        ),
+
+                        retry_writer=(
+                            retry_writer
+                        ),
+
+                        error_log=(
+                            error_log
+                        ),
+
+                        progress=(
+                            progress
+                        ),
+
+                        stats=stats
+                    )
+
+
+                    record_buffer = []
+
+
+            # ================================================
+            # FINAL PARTIAL CHUNK
+            # ================================================
+
+            if record_buffer:
+
+
+                process_chunk(
+                    records=(
+                        record_buffer
+                    ),
+
+                    db=db,
+
+                    collection_ref=(
+                        collection_ref
+                    ),
+
+                    query_pool=(
+                        query_pool
+                    ),
+
+                    write_pool=(
+                        write_pool
+                    ),
+
+                    not_found_file=(
+                        not_found_file
+                    ),
+
+                    retry_writer=(
+                        retry_writer
+                    ),
+
+                    error_log=(
+                        error_log
+                    ),
+
+                    progress=(
+                        progress
+                    ),
+
+                    stats=stats
+                )
+
+
+        progress.finish()
+
+
+        # ====================================================
+        # ERROR FILE SUMMARY
+        # ====================================================
+
+        error_file.write(
+            "\n"
+            + "=" * 80
+            + "\n"
+        )
+
+        error_file.write(
+            "RUN SUMMARY\n"
+        )
+
+        error_file.write(
+            "=" * 80
+            + "\n"
+        )
+
+
+        summary_values = (
+
+            (
+                "Total records",
+                total_records
+            ),
+
+            (
+                "Matched rows",
+                stats[
+                    "matched_rows"
+                ]
+            ),
+
+            (
+                "Documents updated",
+                stats[
+                    "updated_docs"
+                ]
+            ),
+
+            (
+                "Employees not found",
+                stats[
+                    "not_found"
+                ]
+            ),
+
+            (
+                "Malformed records",
+                stats[
+                    "malformed"
+                ]
+            ),
+
+            (
+                "Lookup errors",
+                stats[
+                    "lookup_errors"
+                ]
+            ),
+
+            (
+                "Write errors",
+                stats[
+                    "write_errors"
+                ]
+            ),
+
+            (
+                "Multiple matches skipped",
+                stats[
+                    "multiple_matches"
+                ]
+            ),
+
+            (
+                "Duplicate input rows skipped",
+                stats[
+                    "duplicate_input_rows"
+                ]
+            ),
+
+            (
+                "Lookup retry attempts",
+                stats[
+                    "lookup_retry_attempts"
+                ]
+            ),
+
+            (
+                "Write retry attempts",
+                stats[
+                    "write_retry_attempts"
+                ]
+            ),
+
+            (
+                "Batch splits",
+                stats[
+                    "batch_splits"
+                ]
+            )
+        )
+
+
+        for (
+            label,
+            value
+        ) in summary_values:
+
+
+            error_file.write(
+                f"{label:<30}: "
+                f"{value}\n"
+            )
+
+
+        error_file.write(
+            f"Run completed                 : "
+            f"{datetime.now():%Y-%m-%d %H:%M:%S}\n"
+        )
+
+
+        error_file.flush()
+
+
+    # ========================================================
+    # FINAL TERMINAL SUMMARY
+    # ========================================================
+
+    print()
+    print("=" * 72)
+    print("PROCESSING COMPLETE")
+    print("=" * 72)
+
+
+    print(
+        f"Total records                : "
+        f"{total_records:,}"
+    )
+
+
+    print(
+        f"Employee rows matched        : "
+        f"{stats['matched_rows']:,}"
+    )
+
+
+    print(
+        f"Firestore docs updated       : "
+        f"{stats['updated_docs']:,}"
+    )
+
+
+    print(
+        f"Employees not found          : "
+        f"{stats['not_found']:,}"
+    )
+
+
+    print(
+        f"Malformed records            : "
+        f"{stats['malformed']:,}"
+    )
+
+
+    print(
+        f"Lookup errors                : "
+        f"{stats['lookup_errors']:,}"
+    )
+
+
+    print(
+        f"Write errors                 : "
+        f"{stats['write_errors']:,}"
+    )
+
+
+    print(
+        f"Multiple matches skipped     : "
+        f"{stats['multiple_matches']:,}"
+    )
+
+
+    print(
+        f"Duplicate input rows skipped : "
+        f"{stats['duplicate_input_rows']:,}"
+    )
+
+
+    print(
+        f"Lookup retries recovered     : "
+        f"{stats['lookup_retry_attempts']:,}"
+    )
+
+
+    print(
+        f"Write retries recovered      : "
+        f"{stats['write_retry_attempts']:,}"
+    )
+
+
+    print()
+
+
+    print(
+        f"Not-found file : "
+        f"{not_found_file_path}"
+    )
+
+
+    print(
+        f"Error file     : "
+        f"{error_file_path}"
+    )
+
+
+    print(
+        f"Retry file     : "
+        f"{retry_file_path}"
+    )
+
+
+    print("=" * 72)
+
+
+# ============================================================
+# START
+# ============================================================
+
+if __name__ == "__main__":
+    main()
