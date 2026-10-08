@@ -1,3 +1,9 @@
+
+gcloud projects add-iam-policy-binding gcp-cti-ucs-uat \
+  --member="serviceAccount:terraform-infra@gcp-cti-ucs-uat.iam.gserviceaccount.com" \
+  --role="roles/serviceusage.serviceUsageConsumer"
+
+
 # 1. Export dev indexes
 firebase firestore:indexes --project gcp-cti-ucs-dev > firestore.indexes.json
 
