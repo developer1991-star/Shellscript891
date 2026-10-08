@@ -1,27 +1,8 @@
-locals {
-  deferrals = {
-    "expat_2_5_0_6_el9_8_3" = {
-      name    = "9:expat"
-      version = "0:2.5.0-6.el9_8.3"
-      type    = "rpm"
-      env     = "prod"
-      date    = "10/07/26"
-    },
+# 1. Export dev indexes
+firebase firestore:indexes --project gcp-cti-ucs-dev > firestore.indexes.json
 
-    "google_guice_5_1_0_23_module_el9_8_0_24097_2b12e1e0" = {
-      name    = "9:maven:3.9/google-guice"
-      version = "0:5.1.0-23.module+el9.8.0+24097+2b12e1e0"
-      type    = "rpm"
-      env     = "prod"
-      date    = "10/07/26"
-    },
+# 2. Minimal firebase.json so deploy knows where the file is
+echo '{"firestore":{"indexes":"firestore.indexes.json"}}' > firebase.json
 
-    "python3_3_9_25_7_el9_8_3" = {
-      name    = "python3:9"
-      version = "0:3.9.25-7.el9_8.3"
-      type    = "rpm"
-      env     = "prod"
-      date    = "10/07/26"
-    }
-  }
-}
+# 3. Deploy to UAT
+firebase deploy --only firestore:indexes --project <UAT_PROJECT_ID>
