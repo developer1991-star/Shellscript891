@@ -1,3 +1,13 @@
+jq -c '.indexes[]' firestore.indexes.json | while read -r idx; do
+  cg=$(echo "$idx" | jq -r '.collectionGroup')
+  scope=$(echo "$idx" | jq -r '.queryScope')
+  args=$(echo "$idx" | jq -r '.fields[]
+    | select(.fieldPath != "__name__")
+    | "--field-config=field-path=\(.fieldPath),order=\(.order|ascii_downcase)"')
+  gcloud firestore indexes composite create --project=gcp-cti-ucs-uat \
+    --collection-group="$cg" --query-scope="$scope" $args --async
+done
+
 
 gcloud projects add-iam-policy-binding gcp-cti-ucs-uat \
   --member="serviceAccount:terraform-infra@gcp-cti-ucs-uat.iam.gserviceaccount.com" \
