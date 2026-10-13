@@ -1,24 +1,16 @@
-jq -c '.indexes[]' firestore.indexes.json | while read -r idx; do
-  cg=$(echo "$idx" | jq -r '.collectionGroup')
-  scope=$(echo "$idx" | jq -r '.queryScope')
-  args=$(echo "$idx" | jq -r '.fields[]
-    | select(.fieldPath != "__name__")
-    | "--field-config=field-path=\(.fieldPath),order=\(.order|ascii_downcase)"')
-  gcloud firestore indexes composite create --project=gcp-cti-ucs-uat \
-    --collection-group="$cg" --query-scope="$scope" $args --async
-done
+gcloud run services get-iam-policy charity-system-api-dev \
+  --region=us-east4 \
+  --project=gcp-cti-ucs-dev
+
+TOKEN=$(gcloud auth print-identity-token \
+  --impersonate-service-account=<SERVICE_ACCOUNT_EMAIL> \
+  --audiences=charity-system-api-dev)
 
 
-gcloud projects add-iam-policy-binding gcp-cti-ucs-uat \
-  --member="serviceAccount:terraform-infra@gcp-cti-ucs-uat.iam.gserviceaccount.com" \
-  --role="roles/serviceusage.serviceUsageConsumer"
-
-
-# 1. Export dev indexes
-firebase firestore:indexes --project gcp-cti-ucs-dev > firestore.indexes.json
-
-# 2. Minimal firebase.json so deploy knows where the file is
-echo '{"firestore":{"indexes":"firestore.indexes.json"}}' > firebase.json
-
-# 3. Deploy to UAT
-firebase deploy --only firestore:indexes --project <UAT_PROJECT_ID>
+curl -i -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "TransId: TEST-001" \
+  -H "transactionSrc: CPC" \
+  -d '<VALID JSON BODY>' \
+  "https://<your-cloud-run-url>/v1/cpc-payment-session"
