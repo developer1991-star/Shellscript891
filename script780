@@ -1,18 +1,22 @@
-Hi Rajesh,
+Subject: Request for Support – GCP Service Account Role Updates and Remediation
 
-As part of the GCP vulnerability remediation work, we identified some findings related to the service accounts listed below for the Consent Management DEV environment.
+Hi PCDM Team,
 
-Could you please review the roles assigned to these service accounts and let us know whether all of them are required? Some of the assigned roles are Admin-level roles, so we want to confirm whether those permissions are actually needed.
+As part of our GCP vulnerability remediation work, we are reviewing and updating the IAM roles assigned to several service accounts in the GCP EMP EP projects.
 
-If any roles are not required, could you please let us know which ones can be removed? We would like to follow least-privilege access and remove any unnecessary permissions.
+We will be sharing an Excel sheet shortly with the list of impacted service accounts along with the proposed role changes. For some service accounts, we may need to remove unnecessary roles, while in certain cases we may also need to retire the service account completely.
 
-Our plan is to make the changes in the DEV environment first and validate that everything is working as expected. Once confirmed, we can apply the same remediation approach to UAT and PROD.
+Could you please let us know the process for making these updates and whether the PCDM team can support us with updating the service account roles and retiring service accounts where required?
 
-Service accounts:
+We would like to start with the DEV environment first, validate that the applications and integrations continue to work as expected, and then apply the same changes to UAT and PROD.
 
-* [Service Account 1]
-* [Service Account 2]
-* [Service Account 3]
+The impacted projects are primarily:
+
+* GCP EMP EP DEV
+* GCP EMP EP UAT
+* GCP EMP EP PROD
+
+Please let us know the recommended process, any required request/ticket details, and what information you need from our side so we can proceed with the DEV remediation and testing.
 
 Thanks,
 Vinod
