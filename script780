@@ -1,16 +1,1 @@
-gcloud run services get-iam-policy charity-system-api-dev \
-  --region=us-east4 \
-  --project=gcp-cti-ucs-dev
-
-TOKEN=$(gcloud auth print-identity-token \
-  --impersonate-service-account=<SERVICE_ACCOUNT_EMAIL> \
-  --audiences=charity-system-api-dev)
-
-
-curl -i -X POST \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "TransId: TEST-001" \
-  -H "transactionSrc: CPC" \
-  -d '<VALID JSON BODY>' \
-  "https://<your-cloud-run-url>/v1/cpc-payment-session"
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\your-file.json"))
