@@ -1,1 +1,18 @@
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\your-file.json"))
+Hi Rajesh,
+
+As part of the GCP vulnerability remediation work, we identified some findings related to the service accounts listed below for the Consent Management DEV environment.
+
+Could you please review the roles assigned to these service accounts and let us know whether all of them are required? Some of the assigned roles are Admin-level roles, so we want to confirm whether those permissions are actually needed.
+
+If any roles are not required, could you please let us know which ones can be removed? We would like to follow least-privilege access and remove any unnecessary permissions.
+
+Our plan is to make the changes in the DEV environment first and validate that everything is working as expected. Once confirmed, we can apply the same remediation approach to UAT and PROD.
+
+Service accounts:
+
+* [Service Account 1]
+* [Service Account 2]
+* [Service Account 3]
+
+Thanks,
+Vinod
