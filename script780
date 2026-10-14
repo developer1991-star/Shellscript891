@@ -1,1 +1,5 @@
-Rajesh, we’re seeing an issue in the PROD CD stage after the shared pipeline changes. The withSMCImageTag.txt / withoutSMCImageTag.txt files are not available at the expected path, so the image tag is coming through empty. Because of that, the Docker image reference is invalid and the image is not getting copied to GCP Artifact Registry. Can you please check if anything changed in the shared CD template/artifact path?
+gcloud iam service-accounts add-iam-policy-binding \
+  sa-cti-ucs-prod-cloudrun@gcp-cti-ucs-prod.iam.gserviceaccount.com \
+  --member="serviceAccount:<PROD-DEPLOYER-SERVICE-ACCOUNT>" \
+  --role="roles/iam.serviceAccountUser" \
+  --project=gcp-cti-ucs-prod
