@@ -1,1 +1,1 @@
-The CI is failing now because JFrog Xray is flagging a new High vulnerability, CVE-2026-77762, in tomcat-embed-core 11.0.24. That’s why it worked a week ago but is failing now. I’m checking the permanent remediation, but in the meantime we may need a temporary deferral to unblock the UAT deployment.
+I don’t think 11.0.27 itself is flagged. I tried overriding tomcat.version, but the pipeline still failed with the same 403 Forbidden error. I need to verify whether Maven is actually resolving Tomcat 11.0.27 or if the failure is coming from the JFrog/deferral step.
