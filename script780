@@ -1,12 +1,7 @@
-Hi Douglas,
-
-Thank you for the clarification.
-
-These roles were originally assigned back in 2013, and Terraform was not used to provision or manage them at that time.
-
-Could you please advise on the recommended approach moving forward? Should we create Terraform configurations to manage and update these existing roles, or should we raise support tickets to have the required role changes implemented?
-
-Please let us know the preferred approach so we can proceed accordingly.
-
-Thanks,
-Vinod
+"tomcat_embed_core_11_0_24" = {
+  name    = "org.apache.tomcat.embed:tomcat-embed-core"
+  version = "11.0.24"
+  type    = "maven"
+  env     = "prod"
+  date    = "10/15/26"
+},
