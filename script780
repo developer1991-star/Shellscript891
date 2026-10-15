@@ -1,1 +1,4 @@
-I don’t think 11.0.27 itself is flagged. I tried overriding tomcat.version, but the pipeline still failed with the same 403 Forbidden error. I need to verify whether Maven is actually resolving Tomcat 11.0.27 or if the failure is coming from the JFrog/deferral step.
+Hi team, JFrog Xray is blocking our CI due to the High vulnerability in org.apache.tomcat.embed:tomcat-embed-core:11.0.24 (CVE-2026-77762). We tried overriding Tomcat to 11.0.26 and 11.0.27, but the pipeline still fails with the same 403 Forbidden error. Can you please confirm whether these Tomcat versions are available/approved in the internal JFrog/Lucius repository? If not, should we add a temporary entry in deferral.hcl for the current version to unblock the deployment?
+
+
+I tried both Tomcat 11.0.26 and 11.0.27, but the pipeline is still failing with the same 403. I don’t think trying 11.0.25 will help because that version is still affected by the vulnerability. I’m checking with the EPE team whether 11.0.26/27 are available/allowed in our internal JFrog repo or whether we need a temporary deferral.
