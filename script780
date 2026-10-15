@@ -1,7 +1,1 @@
-"tomcat_embed_core_11_0_24" = {
-  name    = "org.apache.tomcat.embed:tomcat-embed-core"
-  version = "11.0.24"
-  type    = "maven"
-  env     = "prod"
-  date    = "10/15/26"
-},
+The CI is failing now because JFrog Xray is flagging a new High vulnerability, CVE-2026-77762, in tomcat-embed-core 11.0.24. That’s why it worked a week ago but is failing now. I’m checking the permanent remediation, but in the meantime we may need a temporary deferral to unblock the UAT deployment.
